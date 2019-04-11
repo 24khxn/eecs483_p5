@@ -1,0 +1,9 @@
+*.o
+*.output
+*.asm
+.vscode/
+.__*
+.aliases
+dcc
+*.yy.c
+.DS_Store
