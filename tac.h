@@ -228,6 +228,7 @@ class IfZ: public Instruction {
     IfZ(Location *test, const char *label);
     void EmitSpecific(Mips *mips);
     const char *GetLabel() { return label; }
+    LiveVars_t* GetGens() override;
 };
 
 class BeginFunc: public Instruction {
