@@ -186,6 +186,19 @@ void Return::EmitSpecific(Mips *mips) {
   mips->EmitReturn(val);
 }
 
+LiveVars_t* Return::GetGens()
+{
+  if(val)
+  {
+    return FilterGlobalVars(new LiveVars_t {val});
+  }
+  else
+  {
+    return new LiveVars_t;
+  }
+  
+}
+
 
 
 PushParam::PushParam(Location *p)
@@ -196,6 +209,11 @@ PushParam::PushParam(Location *p)
 void PushParam::EmitSpecific(Mips *mips) {
   mips->EmitParam(param);
 } 
+
+LiveVars_t* PushParam::GetGens()
+{
+  return FilterGlobalVars(new LiveVars_t {param});
+}
 
 
 PopParams::PopParams(int nb)
@@ -217,6 +235,19 @@ void LCall::EmitSpecific(Mips *mips) {
   mips->EmitLCall(dst, label);
 }
 
+LiveVars_t* LCall::GetKills()
+{
+  if(dst)
+  {
+    return FilterGlobalVars(new LiveVars_t {dst});
+  }
+  else
+  {
+    return new LiveVars_t;
+  }
+  
+}
+
 
 ACall::ACall(Location *ma, Location *d)
   : dst(d), methodAddr(ma) {
@@ -227,6 +258,19 @@ ACall::ACall(Location *ma, Location *d)
 void ACall::EmitSpecific(Mips *mips) {
   mips->EmitACall(dst, methodAddr);
 } 
+
+LiveVars_t* ACall::GetKills()
+{
+  if(dst)
+  {
+    return FilterGlobalVars(new LiveVars_t {dst});
+  }
+  else
+  {
+    return new LiveVars_t;
+  }
+  
+}
 
 
 
