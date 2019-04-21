@@ -316,6 +316,19 @@ LiveVars_t* LCall::GetKills()
     return new LiveVars_t;
 }
 
+LiveVars_t* LCall::GetKills()
+{
+  if(dst)
+  {
+    return FilterGlobalVars(new LiveVars_t {dst});
+  }
+  else
+  {
+    return new LiveVars_t;
+  }
+  
+}
+
 
 ACall::ACall(Location *ma, Location *d)
   : dst(d), methodAddr(ma) {
