@@ -398,8 +398,8 @@ void CodeGenerator::LiveVariableAnalysis()
             tac->live_vars_out = out_set;
             *(tac->live_vars_in) = *out_set;
 
-            auto gen_set = tac->GetGenVars();
-            auto kill_set = tac->GetKillVars();
+            auto gen_set = tac->GetGens();
+            auto kill_set = tac->GetKills();
 
             for (auto kloc : *(kill_set))
                 tac->live_vars_in->erase(kloc);
@@ -433,7 +433,7 @@ void CodeGenerator::BuildInterferenceGraph()
                 }
             }
 
-            for (auto kill_tac : *(tac->GetKillVars()))
+            for (auto kill_tac : *(tac->GetKills()))
             {
                 if (current->find(kill_tac) == current->end())
                     (*current)[kill_tac] = {};

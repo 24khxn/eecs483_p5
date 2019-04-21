@@ -93,6 +93,7 @@ class Instruction
     char printed[128];
 
   public:
+    Instruction();
     virtual void Print();
     virtual void EmitSpecific(Mips *mips) = 0;
     virtual void Emit(Mips *mips);

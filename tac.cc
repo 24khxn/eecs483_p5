@@ -305,7 +305,7 @@ void LCall::EmitSpecific(Mips *mips) {
     for (auto var: *live_vars_in)
     {
         if (var->GetRegister())
-            mips->FillRegister(var, var->GetRegister);
+            mips->FillRegister(var, var->GetRegister());
     }
 }
 
@@ -314,19 +314,6 @@ LiveVars_t* LCall::GetKills()
     if (dst)
         return FilterGlobalVars(new LiveVars_t {dst});
     return new LiveVars_t;
-}
-
-LiveVars_t* LCall::GetKills()
-{
-  if(dst)
-  {
-    return FilterGlobalVars(new LiveVars_t {dst});
-  }
-  else
-  {
-    return new LiveVars_t;
-  }
-  
 }
 
 
@@ -348,7 +335,7 @@ void ACall::EmitSpecific(Mips *mips) {
     for (auto var: *live_vars_in)
     {
         if (var->GetRegister())
-            mips->FillRegister(var, var->GetRegister);
+            mips->FillRegister(var, var->GetRegister());
     }
     
 } 
