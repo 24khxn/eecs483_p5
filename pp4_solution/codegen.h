@@ -176,6 +176,14 @@ class CodeGenerator {
     // private helper, not for public user
     Location *GenMethodCall(Location*rcvr, Location*meth, List<Location*> *args, bool hasReturnValue);
     void GenHaltWithMessage(const char *msg);
+
+private:
+    // The functions we will be using to properly
+    // assign registers instead of the initial few.
+    void BuildCFG();
+    void LiveVariableAnalysis();
+    void BuildInterferenceGraph();
+    void ColorGraph();
 };
 
 #endif

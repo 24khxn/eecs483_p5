@@ -11,6 +11,8 @@
 #include "mips.h"
 #include "ast_decl.h"
 #include "errors.h"
+#include <stack>
+#include "hashtable.h"
   
 CodeGenerator::CodeGenerator()
 {
@@ -240,6 +242,12 @@ void CodeGenerator::GenVTable(const char *className, List<const char *> *methodL
 
 void CodeGenerator::DoFinalCodeGen()
 {
+
+  // BuildCFG();
+  // LiveVariableAnalysis();
+  // BuildInterferenceGraph();
+  // ColorGraph();
+
   if (IsDebugOn("tac")) { // if debug don't translate to mips, just print Tac
     for (int i = 0; i < code->NumElements(); i++)
       code->Nth(i)->Print();

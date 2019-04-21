@@ -101,6 +101,8 @@ Program   :    DeclList            {
                                       // if no errors, advance to next phase
                                       if (ReportError::NumErrors() == 0) 
                                           program->Check(); 
+                                      if (ReportError::NumErrors() == 0) 
+                                          program->Emit();
                                     }
           ;
 
@@ -124,7 +126,9 @@ Variable  :    Type T_Identifier    { $$ = new VarDecl(new Identifier(@2, $2), $
 Type      :    T_Int                { $$ = Type::intType; }
           |    T_Bool               { $$ = Type::boolType; }
           |    T_String             { $$ = Type::stringType; }
-          |    T_Double             { $$ = Type::doubleType; }
+          |    T_Double             
+                                    { ReportError::Formatted(&@1, "No code gen for doubles");
+                                      $$ = Type::errorType; }
           |    T_Identifier         { $$ = new NamedType(new Identifier(@1,$1)); }
           |    Type T_Dims          { $$ = new ArrayType(Join(@1, @2), $1); }
           ;
@@ -263,7 +267,10 @@ Expr      :    LValue               { $$ = $1; }
 
 Constant  :    T_IntConstant        { $$ = new IntConstant(@1,$1); }
           |    T_BoolConstant       { $$ = new BoolConstant(@1,$1); }
-          |    T_DoubleConstant     { $$ = new DoubleConstant(@1,$1); }
+          |    T_DoubleConstant     
+				
+                                    { ReportError::Formatted(&@1, "No code gen for doubles");
+                                      $$ = new IntConstant(@1,$1); }
           |    T_StringConstant     { $$ = new StringConstant(@1,$1); }
           |    T_Null               { $$ = new NullConstant(@1); }
           ;

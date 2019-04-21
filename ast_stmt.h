@@ -43,6 +43,9 @@ class StmtBlock : public Stmt
     
   public:
     StmtBlock(List<VarDecl*> *variableDeclarations, List<Stmt*> *statements);
+    void Check();
+  
+    void Emit(CodeGenerator *cg);
 };
 
   
@@ -54,13 +57,17 @@ class ConditionalStmt : public Stmt
   
   public:
     ConditionalStmt(Expr *testExpr, Stmt *body);
+    void Check();
 };
 
 class LoopStmt : public ConditionalStmt 
 {
+  protected:
+    const char *afterLoopLabel;
   public:
     LoopStmt(Expr *testExpr, Stmt *body)
             : ConditionalStmt(testExpr, body) {}
+    const char *GetLoopExitLabel() { return afterLoopLabel; }
 };
 
 class ForStmt : public LoopStmt 
@@ -70,12 +77,16 @@ class ForStmt : public LoopStmt
   
   public:
     ForStmt(Expr *init, Expr *test, Expr *step, Stmt *body);
+    void Check();
+    void Emit(CodeGenerator *cg);
 };
 
 class WhileStmt : public LoopStmt 
 {
   public:
     WhileStmt(Expr *test, Stmt *body) : LoopStmt(test, body) {}
+  
+    void Emit(CodeGenerator *cg);
 };
 
 class IfStmt : public ConditionalStmt 
@@ -85,12 +96,18 @@ class IfStmt : public ConditionalStmt
   
   public:
     IfStmt(Expr *test, Stmt *thenBody, Stmt *elseBody);
+    void Check();
+  
+    void Emit(CodeGenerator *cg);
 };
 
 class BreakStmt : public Stmt 
 {
   public:
     BreakStmt(yyltype loc) : Stmt(loc) {}
+    void Check();
+  
+    void Emit(CodeGenerator *cg);
 };
 
 class ReturnStmt : public Stmt  
@@ -100,6 +117,9 @@ class ReturnStmt : public Stmt
   
   public:
     ReturnStmt(yyltype loc, Expr *expr);
+    void Check();
+  
+    void Emit(CodeGenerator *cg);
 };
 
 class PrintStmt : public Stmt
@@ -109,6 +129,9 @@ class PrintStmt : public Stmt
     
   public:
     PrintStmt(List<Expr*> *arguments);
+    void Check();
+  
+    void Emit(CodeGenerator *cg);
 };
 
 

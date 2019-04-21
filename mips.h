@@ -35,6 +35,8 @@ class Mips {
     static const int NumGeneralPurposeRegs = 18;
 
     struct RegContents {
+        bool isDirty;
+	Location *var;
 	const char *name;
 	bool isGeneralPurpose;
     } regs[NumRegs];

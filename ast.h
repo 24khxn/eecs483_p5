@@ -27,6 +27,10 @@
 #include <stdlib.h>   // for NULL
 #include "location.h"
 #include <iostream>
+class Scope;
+class Decl;
+class Identifier;
+class Type;
 class CodeGenerator;
 
 class Node 
@@ -34,6 +38,7 @@ class Node
   protected:
     yyltype *location;
     Node *parent;
+    Scope *nodeScope;
 
   public:
     Node(yyltype loc);
@@ -42,6 +47,21 @@ class Node
     yyltype *GetLocation()   { return location; }
     void SetParent(Node *p)  { parent = p; }
     Node *GetParent()        { return parent; }
+    virtual void Check() {} // not abstract, since some nodes have nothing to do
+    
+    typedef enum { kShallow, kDeep } lookup;
+    virtual Decl *FindDecl(Identifier *id, lookup l = kDeep);
+    virtual Scope *PrepareScope() { return NULL; }
+    template <class Specific> Specific *FindSpecificParent() {
+        Node *p = parent;
+        while (p) {
+            if (Specific *s = dynamic_cast<Specific*>(p)) return s;
+            p = p->parent;
+        }
+        return NULL;
+    }
+	 
+    virtual void Emit(CodeGenerator *cg) {} // not abstract, some nodes do nothing
 };
    
 
@@ -49,10 +69,13 @@ class Identifier : public Node
 {
   protected:
     char *name;
+    Decl *cached;
     
   public:
     Identifier(yyltype loc, const char *name);
     friend std::ostream& operator<<(std::ostream& out, Identifier *id) { return out << id->name; }
+    const char *GetName() { return name; }
+    Decl *GetDeclRelativeToBase(Type *base = NULL);
 };
 
 
