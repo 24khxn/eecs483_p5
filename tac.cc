@@ -12,6 +12,11 @@ Location::Location(Segment s, int o, const char *name) :
   variableName(strdup(name)), segment(s), offset(o),
   reference(NULL) {}
 
+Instruction::Instruction()
+{
+    live_vars_in = new LiveVars_t;
+    live_vars_out = new LiveVars_t;
+}
  
 void Instruction::Print() {
   printf("\t%s ;", printed);

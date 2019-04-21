@@ -26,6 +26,7 @@
 #include "list.h" // for VTable
 #include "mips.h"
 #include <set>
+#include <map>
 
     // A Location object is used to identify the operands to the
     // various TAC instructions. A Location is either fp or gp
@@ -96,8 +97,8 @@ class Instruction
     virtual void EmitSpecific(Mips *mips) = 0;
     virtual void Emit(Mips *mips);
 
-    virtual LiveVars_t *GetGenVars() { return new LiveVars_t; }
-    virtual LiveVars_t* GetKillVars() { return new LiveVars_t; }
+    virtual LiveVars_t *GetGens() { return new LiveVars_t; }
+    virtual LiveVars_t* GetKills() { return new LiveVars_t; }
     LiveVars_t* FilterGlobalVars(LiveVars_t*);
 
     List<Instruction*> prev; 
@@ -131,14 +132,13 @@ class Instruction
   class VTable;
 
 
-
-
 class LoadConstant: public Instruction {
     Location *dst;
     int val;
   public:
     LoadConstant(Location *dst, int val);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
 };
 
 class LoadStringConstant: public Instruction {
@@ -147,6 +147,7 @@ class LoadStringConstant: public Instruction {
   public:
     LoadStringConstant(Location *dst, const char *s);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
 };
     
 class LoadLabel: public Instruction {
@@ -155,6 +156,8 @@ class LoadLabel: public Instruction {
   public:
     LoadLabel(Location *dst, const char *label);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
+
 };
 
 class Assign: public Instruction {
@@ -162,6 +165,8 @@ class Assign: public Instruction {
   public:
     Assign(Location *dst, Location *src);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
+    LiveVars_t* GetGens() override;
 };
 
 class Load: public Instruction {
@@ -170,6 +175,8 @@ class Load: public Instruction {
   public:
     Load(Location *dst, Location *src, int offset = 0);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
+    LiveVars_t* GetGens() override;
 };
 
 class Store: public Instruction {
@@ -178,6 +185,7 @@ class Store: public Instruction {
   public:
     Store(Location *d, Location *s, int offset = 0);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetGens() override;
 };
 
 class BinaryOp: public Instruction {
@@ -192,6 +200,8 @@ class BinaryOp: public Instruction {
   public:
     BinaryOp(Mips::OpCode c, Location *dst, Location *op1, Location *op2);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
+    LiveVars_t* GetGens() override;
 };
 
 class Label: public Instruction {
@@ -242,6 +252,7 @@ class Return: public Instruction {
   public:
     Return(Location *val);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetGens() override;
 };   
 
 class PushParam: public Instruction {
@@ -249,6 +260,7 @@ class PushParam: public Instruction {
   public:
     PushParam(Location *param);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetGens() override;
 }; 
 
 class PopParams: public Instruction {
@@ -264,6 +276,7 @@ class LCall: public Instruction {
   public:
     LCall(const char *labe, Location *result);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
 };
 
 class ACall: public Instruction {
@@ -271,6 +284,7 @@ class ACall: public Instruction {
   public:
     ACall(Location *meth, Location *result);
     void EmitSpecific(Mips *mips);
+    LiveVars_t* GetKills() override;
 };
 
 class VTable: public Instruction {
