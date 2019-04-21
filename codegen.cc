@@ -358,6 +358,12 @@ void CodeGenerator::BuildCFG()
             ifz_tac->next.Append(jump_tac);
             jump_tac->prev.Append(ifz_tac);
         }
+        else if (auto goto_tac = dynamic_cast<Goto*>(tac))
+        {
+            auto jumpto_tac = label_to_TAC.Lookup(goto_tac->GetLabel());
+            goto_tac->next.Append(jumpto_tac);
+            jumpto_tac->prev.Append(goto_tac);
+        }
         else 
         {
             tac->next.Append(code->Nth(i+1));
@@ -390,7 +396,7 @@ void CodeGenerator::LiveVariableAnalysis()
                 changed = true;
             
             tac->live_vars_out = out_set;
-            *(tac->live_vars_out) = *out_set;
+            *(tac->live_vars_in) = *out_set;
 
             auto gen_set = tac->GetGenVars();
             auto kill_set = tac->GetKillVars();
