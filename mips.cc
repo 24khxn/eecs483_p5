@@ -69,6 +69,42 @@ void Mips::FillRegister(Location *src, Register reg)
        offsetFromWhere,src->GetOffset());
 }
 
+void Mips::ClearRegister()
+{
+  regs[zero] = (RegContents){false, NULL, "$zero", false};
+  regs[at] = (RegContents){false, NULL, "$at", false};
+  regs[v0] = (RegContents){false, NULL, "$v0", false};
+  regs[v1] = (RegContents){false, NULL, "$v1", false};
+  regs[a0] = (RegContents){false, NULL, "$a0", false};
+  regs[a1] = (RegContents){false, NULL, "$a1", false};
+  regs[a2] = (RegContents){false, NULL, "$a2", false};
+  regs[a3] = (RegContents){false, NULL, "$a3", false};
+  regs[k0] = (RegContents){false, NULL, "$k0", false};
+  regs[k1] = (RegContents){false, NULL, "$k1", false};
+  regs[gp] = (RegContents){false, NULL, "$gp", false};
+  regs[sp] = (RegContents){false, NULL, "$sp", false};
+  regs[fp] = (RegContents){false, NULL, "$fp", false};
+  regs[ra] = (RegContents){false, NULL, "$ra", true};
+  regs[t0] = (RegContents){false, NULL, "$t0", true};
+  regs[t1] = (RegContents){false, NULL, "$t1", true};
+  regs[t2] = (RegContents){false, NULL, "$t2", true};
+  regs[t3] = (RegContents){false, NULL, "$t3", true};
+  regs[t4] = (RegContents){false, NULL, "$t4", true};
+  regs[t5] = (RegContents){false, NULL, "$t5", true};
+  regs[t6] = (RegContents){false, NULL, "$t6", true};
+  regs[t7] = (RegContents){false, NULL, "$t7", true};
+  regs[t8] = (RegContents){false, NULL, "$t8", true};
+  regs[t9] = (RegContents){false, NULL, "$t9", true};
+  regs[s0] = (RegContents){false, NULL, "$s0", true};
+  regs[s1] = (RegContents){false, NULL, "$s1", true};
+  regs[s2] = (RegContents){false, NULL, "$s2", true};
+  regs[s3] = (RegContents){false, NULL, "$s3", true};
+  regs[s4] = (RegContents){false, NULL, "$s4", true};
+  regs[s5] = (RegContents){false, NULL, "$s5", true};
+  regs[s6] = (RegContents){false, NULL, "$s6", true};
+  regs[s7] = (RegContents){false, NULL, "$s7", true};
+}
+
 
 
 /* Method: Emit

@@ -147,7 +147,7 @@ class CodeGenerator {
 
          // These methods generate the Tac instructions that mark the start
          // and end of a function/method definition. 
-    BeginFunc *GenBeginFunc();
+    BeginFunc *GenBeginFunc(FnDecl*);
     void GenEndFunc();
 
     

@@ -234,8 +234,9 @@ class IfZ: public Instruction {
 
 class BeginFunc: public Instruction {
     int frameSize;
+    List<Location*> *formals;
   public:
-    BeginFunc();
+    BeginFunc(List<Location*>*);
     // used to backpatch the instruction with frame size once known
     void SetFrameSize(int numBytesForAllLocalsAndTemps);
     void EmitSpecific(Mips *mips);

@@ -10,7 +10,7 @@
 
 Location::Location(Segment s, int o, const char *name) :
   variableName(strdup(name)), segment(s), offset(o),
-  reference(NULL) {}
+  reference(NULL), reg(Mips::zero) {}
 
 Instruction::Instruction()
 {
@@ -223,9 +223,10 @@ LiveVars_t *IfZ::GetGens()
 
 
 
-BeginFunc::BeginFunc() {
+BeginFunc::BeginFunc(List<Location*> *forms) {
   sprintf(printed,"BeginFunc (unassigned)");
   frameSize = -555; // used as sentinel to recognized unassigned value
+  formals = forms;
 }
 void BeginFunc::SetFrameSize(int numBytesForAllLocalsAndTemps) {
   frameSize = numBytesForAllLocalsAndTemps; 
@@ -241,6 +242,7 @@ EndFunc::EndFunc() : Instruction() {
 }
 void EndFunc::EmitSpecific(Mips *mips) {
   mips->EmitEndFunction();
+  mips->ClearRegister();
 }
 
 
