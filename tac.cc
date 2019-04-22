@@ -376,7 +376,7 @@ LCall::LCall(const char *l, Location *d)
   sprintf(printed, "%s%sLCall %s", dst? dst->GetName(): "", dst?" = ":"", label);
 }
 void LCall::EmitSpecific(Mips *mips) {
-  mips->EmitLCall(dst, label);
+//   mips->EmitLCall(dst, label);
 
   //Now we need to do caller save stuff
   for(int i = 0; i < in_set.NumElements(); i++)
