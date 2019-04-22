@@ -171,6 +171,9 @@ class BinaryOp: public Instruction {
   public:
     BinaryOp(Mips::OpCode c, Location *dst, Location *op1, Location *op2);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeKillSet();
+    List<Location*> MakeGenSet();
+    bool IsDead();
 };
 
 class Label: public Instruction {
@@ -197,15 +200,20 @@ class IfZ: public Instruction {
     IfZ(Location *test, const char *label);
     void EmitSpecific(Mips *mips);
     const char *GetLabel() { return label; }
+    List<Location*> MakeGenSet();
 };
 
 class BeginFunc: public Instruction {
     int frameSize;
+    List<Location*> parameters;
+    bool is_method;
   public:
     BeginFunc();
     // used to backpatch the instruction with frame size once known
     void SetFrameSize(int numBytesForAllLocalsAndTemps);
     void EmitSpecific(Mips *mips);
+    void AddParamter(Location *param);
+    void CheckMethod(FnDecl* fn);
 };
 
 class EndFunc: public Instruction {

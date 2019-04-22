@@ -82,7 +82,19 @@ void Load::EmitSpecific(Mips *mips) {
   mips->EmitLoad(dst, src, offset);
 }
 
+List<Location*> Load::MakeKillSet()
+{
+  List<Location*> kill_set;
+  kill_set.Append(src);
+  return kill_set;
+}
 
+List<Location*> Load::MakeGenSet()
+{
+  List<Location*> gen_set;
+  gen_set.Append(dst);
+  return gen_set;
+}
 
 Store::Store(Location *d, Location *s, int off)
   : dst(d), src(s), offset(off) {
@@ -96,6 +108,13 @@ void Store::EmitSpecific(Mips *mips) {
   mips->EmitStore(dst, src, offset);
 }
 
+List<Location*> Store::MakeGenSet()
+{
+  List<Location*> gen_set;
+  gen_set.Append(src);
+  gen_set.Append(dst);
+  return gen_set;
+}
  
 const char * const BinaryOp::opName[Mips::NumOps]  = {"+", "-", "*", "/", "%", "==", "<", "&&", "||"};;
 
@@ -117,7 +136,32 @@ void BinaryOp::EmitSpecific(Mips *mips) {
   mips->EmitBinaryOp(code, dst, op1, op2);
 }
 
+List<Location*> BinaryOp::MakeKillSet()
+{
+  List<Location*> kill_set;
+  kill_set.Append(dst);
+  return kill_set;
+}
 
+List<Location*> BinaryOp::MakeGenSet()
+{
+  List<Location*> gen_set;
+  gen_set.Append(op1);
+  gen_set.Append(op2);
+  return gen_set;
+}
+
+bool BinaryOp::IsDead()
+{
+  for(int i = 0; i < out_set.NumElements(); i++)
+  {
+    if(out_set.Nth(i) == dst)
+    {
+      return false;
+    }
+  }
+  return true;
+}
 
 Label::Label(const char *l) : label(strdup(l)) {
   Assert(label != NULL);
@@ -129,8 +173,6 @@ void Label::Print() {
 void Label::EmitSpecific(Mips *mips) {
   mips->EmitLabel(label);
 }
-
-
  
 Goto::Goto(const char *l) : label(strdup(l)) {
   Assert(label != NULL);
@@ -139,7 +181,6 @@ Goto::Goto(const char *l) : label(strdup(l)) {
 void Goto::EmitSpecific(Mips *mips) {	  
   mips->EmitGoto(label);
 }
-
 
 IfZ::IfZ(Location *te, const char *l)
    : test(te), label(strdup(l)) {
@@ -150,7 +191,12 @@ void IfZ::EmitSpecific(Mips *mips) {
   mips->EmitIfZ(test, label);
 }
 
-
+List<Location*> IfZ::MakeGenSet()
+{
+  List<Location*> gen_set;
+  gen_set.Append(test);
+  return gen_set;
+}
 
 BeginFunc::BeginFunc() {
   sprintf(printed,"BeginFunc (unassigned)");
@@ -162,8 +208,37 @@ void BeginFunc::SetFrameSize(int numBytesForAllLocalsAndTemps) {
 }
 void BeginFunc::EmitSpecific(Mips *mips) {
   mips->EmitBeginFunction(frameSize);
+
+  //Now we need to do caller save stuff
+  Location* fp = new Location(fpRelative, -800-frameSize, "framePointer");
+  fp->SetRegister(Mips::Register(30));
+
+  if(is_method)
+  {
+    for(int i = 0; i < in_set.NumElements(); i++)
+    {
+      if(!strcmp(in_set.Nth(i)->GetName(), "this"))
+      {
+        mips->EmitLoad(in_set.Nth(i), fp, 4);
+      }
+    }
+  }
+
+  for(int i = 0; i < parameters.NumElements(); i++)
+  {
+    mips->EmitLoad(parameters.Nth(i), fp, i * 4 + 4 + 4 * is_method);
+  }
 }
 
+void BeginFunc::AddParamter(Location* param)
+{
+  parameters.Append(param);
+}
+
+void BeginFunc::CheckMethod(FnDecl* fn)
+{
+  is_method = fn->IsMethodDecl();
+}
 
 EndFunc::EndFunc() : Instruction() {
   sprintf(printed, "EndFunc");
