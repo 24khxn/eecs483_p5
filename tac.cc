@@ -10,13 +10,8 @@
 
 Location::Location(Segment s, int o, const char *name) :
   variableName(strdup(name)), segment(s), offset(o),
-  reference(NULL), reg(Mips::zero) {}
+  reference(NULL) {}
 
-Instruction::Instruction()
-{
-    live_vars_in = new LiveVars_t;
-    live_vars_out = new LiveVars_t;
-}
  
 void Instruction::Print() {
   printf("\t%s ;", printed);
@@ -29,19 +24,6 @@ void Instruction::Emit(Mips *mips) {
   EmitSpecific(mips);
 }
 
-LiveVars_t* Instruction::FilterGlobalVars(LiveVars_t* lv)
-{
-    LiveVars_t* result = new LiveVars_t;
-
-    for (auto var: *lv)
-    {
-        if (var->GetSegment() == fpRelative)
-            result->insert(var);
-    }
-
-    return result;
-}
-
 LoadConstant::LoadConstant(Location *d, int v)
   : dst(d), val(v) {
   Assert(dst != NULL);
@@ -49,11 +31,6 @@ LoadConstant::LoadConstant(Location *d, int v)
 }
 void LoadConstant::EmitSpecific(Mips *mips) {
   mips->EmitLoadConstant(dst, val);
-}
-
-LiveVars_t *LoadConstant::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t{dst});
 }
 
 LoadStringConstant::LoadStringConstant(Location *d, const char *s)
@@ -69,10 +46,6 @@ void LoadStringConstant::EmitSpecific(Mips *mips) {
   mips->EmitLoadStringConstant(dst, str);
 }
 
-LiveVars_t *LoadStringConstant::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t {dst});
-}
      
 
 LoadLabel::LoadLabel(Location *d, const char *l)
@@ -84,10 +57,6 @@ void LoadLabel::EmitSpecific(Mips *mips) {
   mips->EmitLoadLabel(dst, label);
 }
 
-LiveVars_t* LoadLabel::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t {dst});
-}
 
 
 Assign::Assign(Location *d, Location *s)
@@ -97,16 +66,6 @@ Assign::Assign(Location *d, Location *s)
 }
 void Assign::EmitSpecific(Mips *mips) {
   mips->EmitCopy(dst, src);
-}
-
-LiveVars_t *Assign::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t {dst});
-}
-
-LiveVars_t *Assign::GetGens()
-{
-    return FilterGlobalVars(new LiveVars_t {src});
 }
 
 
@@ -123,16 +82,6 @@ void Load::EmitSpecific(Mips *mips) {
   mips->EmitLoad(dst, src, offset);
 }
 
-LiveVars_t *Load::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t {dst});
-}
-
-LiveVars_t *Load::GetGens()
-{
-    return FilterGlobalVars(new LiveVars_t {src});
-}
-
 
 
 Store::Store(Location *d, Location *s, int off)
@@ -145,11 +94,6 @@ Store::Store(Location *d, Location *s, int off)
 }
 void Store::EmitSpecific(Mips *mips) {
   mips->EmitStore(dst, src, offset);
-}
-
-LiveVars_t *Store::GetGens()
-{
-    return FilterGlobalVars(new LiveVars_t {dst, src});
 }
 
  
@@ -171,16 +115,6 @@ BinaryOp::BinaryOp(Mips::OpCode c, Location *d, Location *o1, Location *o2)
 }
 void BinaryOp::EmitSpecific(Mips *mips) {	  
   mips->EmitBinaryOp(code, dst, op1, op2);
-}
-
-LiveVars_t *BinaryOp::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t {dst});
-}
-
-LiveVars_t *BinaryOp::GetGens()
-{
-    return FilterGlobalVars(new LiveVars_t {op1, op2});
 }
 
 
@@ -216,17 +150,11 @@ void IfZ::EmitSpecific(Mips *mips) {
   mips->EmitIfZ(test, label);
 }
 
-LiveVars_t *IfZ::GetGens()
-{
-    return FilterGlobalVars(new LiveVars_t {test});
-}
 
 
-
-BeginFunc::BeginFunc(List<Location*> *forms) {
+BeginFunc::BeginFunc() {
   sprintf(printed,"BeginFunc (unassigned)");
   frameSize = -555; // used as sentinel to recognized unassigned value
-  formals = forms;
 }
 void BeginFunc::SetFrameSize(int numBytesForAllLocalsAndTemps) {
   frameSize = numBytesForAllLocalsAndTemps; 
@@ -242,7 +170,6 @@ EndFunc::EndFunc() : Instruction() {
 }
 void EndFunc::EmitSpecific(Mips *mips) {
   mips->EmitEndFunction();
-  mips->ClearRegister();
 }
 
 
@@ -252,14 +179,6 @@ Return::Return(Location *v) : val(v) {
 }
 void Return::EmitSpecific(Mips *mips) {	  
   mips->EmitReturn(val);
-}
-
-LiveVars_t *Return::GetGens()
-{
-    if (val)
-        return FilterGlobalVars(new LiveVars_t {val});
-    else 
-        return new LiveVars_t;
 }
 
 
@@ -272,11 +191,6 @@ PushParam::PushParam(Location *p)
 void PushParam::EmitSpecific(Mips *mips) {
   mips->EmitParam(param);
 } 
-
-LiveVars_t *PushParam::GetGens()
-{
-    return FilterGlobalVars(new LiveVars_t {param});
-}
 
 
 PopParams::PopParams(int nb)
@@ -295,27 +209,7 @@ LCall::LCall(const char *l, Location *d)
   sprintf(printed, "%s%sLCall %s", dst? dst->GetName(): "", dst?" = ":"", label);
 }
 void LCall::EmitSpecific(Mips *mips) {
-
-    for (auto var: *live_vars_in)
-    {
-        if (var->GetRegister())
-            mips->SpillRegister(var, var->GetRegister());
-    }
-
-    mips->EmitLCall(dst, label);
-
-    for (auto var: *live_vars_in)
-    {
-        if (var->GetRegister())
-            mips->FillRegister(var, var->GetRegister());
-    }
-}
-
-LiveVars_t* LCall::GetKills()
-{
-    if (dst)
-        return FilterGlobalVars(new LiveVars_t {dst});
-    return new LiveVars_t;
+  mips->EmitLCall(dst, label);
 }
 
 
@@ -326,28 +220,9 @@ ACall::ACall(Location *ma, Location *d)
 	    methodAddr->GetName());
 }
 void ACall::EmitSpecific(Mips *mips) {
-    for (auto var: *live_vars_in)
-    {
-        if (var->GetRegister())
-            mips->SpillRegister(var, var->GetRegister());
-    }
-
-    mips->EmitACall(dst, methodAddr);
-
-    for (auto var: *live_vars_in)
-    {
-        if (var->GetRegister())
-            mips->FillRegister(var, var->GetRegister());
-    }
-    
+  mips->EmitACall(dst, methodAddr);
 } 
 
-LiveVars_t* ACall::GetKills()
-{
-    if (dst)
-        return FilterGlobalVars(new LiveVars_t {dst});
-    return new LiveVars_t;
-}
 
 
 VTable::VTable(const char *l, List<const char *> *m)

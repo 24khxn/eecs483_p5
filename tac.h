@@ -25,8 +25,6 @@
 
 #include "list.h" // for VTable
 #include "mips.h"
-#include <set>
-#include <map>
 
     // A Location object is used to identify the operands to the
     // various TAC instructions. A Location is either fp or gp
@@ -46,8 +44,6 @@ class Location
     int offset;
     Location *reference;
     int refOffset;
-
-    Mips::Register reg;
 	  
   public:
     Location(Segment seg, int offset, const char *name);
@@ -55,57 +51,27 @@ class Location
 	variableName(base->variableName), segment(base->segment),
 	offset(base->offset), reference(base), refOffset(refOff) {}
  
-    const char *GetName()               { return variableName; }
-    Segment GetSegment()                { return segment; }
-    int GetOffset()                     { return offset; }
-    bool IsReference()                  { return reference != NULL; }
-    Location *GetReference()            { return reference; }
-    int GetRefOffset()                  { return refOffset; }
-    void SetRegister(Mips::Register r)  { reg = r; }
-    Mips::Register GetRegister()        { return reg; }
+    const char *GetName()           { return variableName; }
+    Segment GetSegment()            { return segment; }
+    int GetOffset()                 { return offset; }
+    bool IsReference()              { return reference != NULL; }
+    Location *GetReference()        { return reference; }
+    int GetRefOffset()              { return refOffset; }
 };
+ 
 
 
-struct LocationComparator
-{
-    bool operator()(Location *lhs, Location *rhs)
-    {
-        if (strcmp(lhs->GetName(), rhs->GetName()) != 0)
-            return strcmp(lhs->GetName(), rhs->GetName()) < 0;
-        
-        else if (lhs->GetSegment() != rhs->GetSegment())
-            return lhs->GetSegment() < rhs->GetSegment();
-
-        else 
-            return lhs->GetOffset() < rhs->GetOffset();
-    }
-};
-
-using LiveVars_t = std::set<Location*, LocationComparator>;
-using InterferenceGraph_t = std::map<Location*, std::set<Location*, LocationComparator>, LocationComparator>; 
-
-// base class from which all Tac instructions derived
-// has the interface for the 2 polymorphic messages: Print & Emit
-
-class Instruction
-{
-  protected:
-    char printed[128];
-
-  public:
-    Instruction();
-    virtual void Print();
-    virtual void EmitSpecific(Mips *mips) = 0;
-    virtual void Emit(Mips *mips);
-
-    virtual LiveVars_t *GetGens() { return new LiveVars_t; }
-    virtual LiveVars_t* GetKills() { return new LiveVars_t; }
-    LiveVars_t* FilterGlobalVars(LiveVars_t*);
-
-    List<Instruction*> prev; 
-    List<Instruction*> next;
-    LiveVars_t* live_vars_in; 
-    LiveVars_t* live_vars_out;
+  // base class from which all Tac instructions derived
+  // has the interface for the 2 polymorphic messages: Print & Emit
+  
+class Instruction {
+    protected:
+        char printed[128];
+	  
+    public:
+	virtual void Print();
+	virtual void EmitSpecific(Mips *mips) = 0;
+	virtual void Emit(Mips *mips);
 };
 
   
@@ -133,13 +99,14 @@ class Instruction
   class VTable;
 
 
+
+
 class LoadConstant: public Instruction {
     Location *dst;
     int val;
   public:
     LoadConstant(Location *dst, int val);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
 };
 
 class LoadStringConstant: public Instruction {
@@ -148,7 +115,6 @@ class LoadStringConstant: public Instruction {
   public:
     LoadStringConstant(Location *dst, const char *s);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
 };
     
 class LoadLabel: public Instruction {
@@ -157,8 +123,6 @@ class LoadLabel: public Instruction {
   public:
     LoadLabel(Location *dst, const char *label);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
-
 };
 
 class Assign: public Instruction {
@@ -166,8 +130,6 @@ class Assign: public Instruction {
   public:
     Assign(Location *dst, Location *src);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
-    LiveVars_t* GetGens() override;
 };
 
 class Load: public Instruction {
@@ -176,8 +138,6 @@ class Load: public Instruction {
   public:
     Load(Location *dst, Location *src, int offset = 0);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
-    LiveVars_t* GetGens() override;
 };
 
 class Store: public Instruction {
@@ -186,7 +146,6 @@ class Store: public Instruction {
   public:
     Store(Location *d, Location *s, int offset = 0);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetGens() override;
 };
 
 class BinaryOp: public Instruction {
@@ -201,8 +160,6 @@ class BinaryOp: public Instruction {
   public:
     BinaryOp(Mips::OpCode c, Location *dst, Location *op1, Location *op2);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
-    LiveVars_t* GetGens() override;
 };
 
 class Label: public Instruction {
@@ -229,19 +186,15 @@ class IfZ: public Instruction {
     IfZ(Location *test, const char *label);
     void EmitSpecific(Mips *mips);
     const char *GetLabel() { return label; }
-    LiveVars_t* GetGens() override;
 };
 
 class BeginFunc: public Instruction {
     int frameSize;
-    List<Location*> *formals;
   public:
-    BeginFunc(List<Location*>*);
+    BeginFunc();
     // used to backpatch the instruction with frame size once known
     void SetFrameSize(int numBytesForAllLocalsAndTemps);
     void EmitSpecific(Mips *mips);
-
-    InterferenceGraph_t interference_graph;
 };
 
 class EndFunc: public Instruction {
@@ -255,7 +208,6 @@ class Return: public Instruction {
   public:
     Return(Location *val);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetGens() override;
 };   
 
 class PushParam: public Instruction {
@@ -263,7 +215,6 @@ class PushParam: public Instruction {
   public:
     PushParam(Location *param);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetGens() override;
 }; 
 
 class PopParams: public Instruction {
@@ -279,7 +230,6 @@ class LCall: public Instruction {
   public:
     LCall(const char *labe, Location *result);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
 };
 
 class ACall: public Instruction {
@@ -287,7 +237,6 @@ class ACall: public Instruction {
   public:
     ACall(Location *meth, Location *result);
     void EmitSpecific(Mips *mips);
-    LiveVars_t* GetKills() override;
 };
 
 class VTable: public Instruction {
