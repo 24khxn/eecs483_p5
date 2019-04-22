@@ -25,6 +25,9 @@
 
 #include "list.h" // for VTable
 #include "mips.h"
+#include <string>
+
+using namespace std;
 
     // A Location object is used to identify the operands to the
     // various TAC instructions. A Location is either fp or gp
@@ -44,6 +47,7 @@ class Location
     int offset;
     Location *reference;
     int refOffset;
+    List<Location*>* edges;
 
     Mips::Register reg;
 	  
@@ -51,7 +55,8 @@ class Location
     Location(Segment seg, int offset, const char *name);
     Location(Location *base, int refOff) :
 	  variableName(base->variableName), segment(base->segment),
-	  offset(base->offset), reference(base), refOffset(refOff) {}
+	  offset(base->offset), reference(base), refOffset(refOff) 
+      { edges = new List<Location*>(); }
  
     const char *GetName()           { return variableName; }
     Segment GetSegment()            { return segment; }
@@ -59,6 +64,11 @@ class Location
     bool IsReference()              { return reference != NULL; }
     Location *GetReference()        { return reference; }
     int GetRefOffset()              { return refOffset; }
+
+    void AddEdge(Location*, bool recall = false);
+    int GetNumEdges();
+    Location* GetEdge(int);
+    void RemoveAllEdges(); 
 
     void SetRegister(Mips::Register r) { reg = r; }
     Mips::Register GetRegister()    { return reg; }
@@ -72,17 +82,23 @@ class Location
 class Instruction {
     protected:
         char printed[128];
+        List<Instruction*> directed_edges;
 	  
     public:
       List<Location*> in_set;
       List<Location*> out_set;
+
+      void AddEdge(Instruction* instr) { directed_edges.Append(instr); }
+      int GetNumEdges() { return directed_edges.NumElements(); }
+      Instruction* GetEdge(int n) { return directed_edges.Nth(n); }
+
 	    virtual void Print();
 	    virtual void EmitSpecific(Mips *mips) = 0;
 	    virtual void Emit(Mips *mips);
 
-      virtual void EmitSpecific(Mips *mips) = 0;
       virtual List<Location*> MakeGenSet() { List<Location*> empty; return empty; }
       virtual List<Location*> MakeKillSet() { List<Location*> empty; return empty; }
+      virtual bool IsDead() { return false; }
 };
 
   
@@ -118,6 +134,8 @@ class LoadConstant: public Instruction {
   public:
     LoadConstant(Location *dst, int val);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeKillSet();
+    bool IsDead();
 };
 
 class LoadStringConstant: public Instruction {
@@ -126,6 +144,8 @@ class LoadStringConstant: public Instruction {
   public:
     LoadStringConstant(Location *dst, const char *s);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeKillSet();
+    bool IsDead();
 };
     
 class LoadLabel: public Instruction {
@@ -141,6 +161,9 @@ class Assign: public Instruction {
   public:
     Assign(Location *dst, Location *src);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeKillSet();
+    List<Location*> MakeGenSet();
+    bool IsDead();
 };
 
 class Load: public Instruction {
@@ -149,6 +172,8 @@ class Load: public Instruction {
   public:
     Load(Location *dst, Location *src, int offset = 0);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeKillSet();
+    List<Location*> MakeGenSet();
 };
 
 class Store: public Instruction {
@@ -157,6 +182,8 @@ class Store: public Instruction {
   public:
     Store(Location *d, Location *s, int offset = 0);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeGenSet();
+
 };
 
 class BinaryOp: public Instruction {

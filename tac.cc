@@ -10,7 +10,41 @@
 
 Location::Location(Segment s, int o, const char *name) :
   variableName(strdup(name)), segment(s), offset(o),
-  reference(NULL) {}
+  reference(NULL), reg(Mips::zero) 
+  {
+      edges = new List<Location*>();
+  }
+
+void Location::AddEdge(Location* edge, bool recall)
+{
+    if (!recall)
+    {
+        for (int i = 0; i < GetNumEdges(); i++)
+        {
+            if (edge == edges->Nth(i)) return;
+        }
+
+        edges->Append(edge);
+        edge->AddEdge(this, true);
+    }
+
+    else edges->Append(edge);
+}
+
+int Location::GetNumEdges()
+{
+    return edges->NumElements();
+}
+
+Location* Location::GetEdge(int n)
+{
+    return edges->Nth(n);
+}
+
+void Location::RemoveAllEdges()
+{
+    edges->Clear();
+}
 
  
 void Instruction::Print() {
@@ -32,6 +66,21 @@ LoadConstant::LoadConstant(Location *d, int v)
 void LoadConstant::EmitSpecific(Mips *mips) {
   mips->EmitLoadConstant(dst, val);
 }
+List<Location*> LoadConstant::MakeKillSet()
+{
+    List<Location*> set;
+    set.Append(dst);
+    return set;
+}
+bool LoadConstant::IsDead()
+{
+    for (int i = 0; i < out_set.NumElements(); i++)
+        if (out_set.Nth(i) == dst) return false;
+
+    return true;
+}
+
+
 
 LoadStringConstant::LoadStringConstant(Location *d, const char *s)
   : dst(d) {
@@ -44,6 +93,19 @@ LoadStringConstant::LoadStringConstant(Location *d, const char *s)
 }
 void LoadStringConstant::EmitSpecific(Mips *mips) {
   mips->EmitLoadStringConstant(dst, str);
+}
+List<Location*> LoadStringConstant::MakeKillSet()
+{
+    List<Location*> set;
+    set.Append(dst);
+    return set;
+}
+bool LoadStringConstant::IsDead()
+{
+    for (int i = 0; i < out_set.NumElements(); i++)
+        if (out_set.Nth(i) == dst) return false;
+
+    return true;
 }
 
      
@@ -66,6 +128,19 @@ Assign::Assign(Location *d, Location *s)
 }
 void Assign::EmitSpecific(Mips *mips) {
   mips->EmitCopy(dst, src);
+}
+List<Location*> Assign::MakeKillSet()
+{
+    List<Location*> set;
+    set.Append(dst);
+    return set;
+}
+bool Assign::IsDead()
+{
+    for (int i = 0; i < out_set.NumElements(); i++)
+        if (out_set.Nth(i) == dst) return false;
+
+    return true;
 }
 
 
