@@ -12,6 +12,10 @@
 #include <stdlib.h>
 #include "list.h"
 #include "tac.h"
+#include <string>
+#include <vector>
+#include <unordered_map>
+
 class FnDecl;
  
 
@@ -22,8 +26,19 @@ typedef enum { Alloc, ReadLine, ReadInteger, StringEqual,
 class CodeGenerator {
   private:
     List<Instruction*> *code;
+    List<Location*>* interference_graph;
     int curStackOffset, curGlobalOffset;
-    int insideFn;
+    BeginFunc* inside_fn;
+    std::unordered_map<std::string, Instruction*> *labels;
+    std::vector<Instruction*>* deleted_code;
+
+    void LivenessAnalysis(int);
+    bool DeadCodeAnalysis(int);
+    void BuildInterferenceGraph(int);
+    int FindNode(List<Location*>);
+    int FindMaxK(List<Location*>);
+    bool Removed(Location*, List<Location*>);
+
 
   public:
            // Here are some class constants to remind you of the offsets
@@ -42,6 +57,11 @@ class CodeGenerator {
     static const int VarSize = 4;
 
     CodeGenerator();
+
+    void CreateCFG(int);
+    void ColorGraph();
+
+    int NumInstructions() { return code->NumElements(); }
     
          // Assigns a new unique label name and returns it. Does not
          // generate any Tac instructions (see GenLabel below if needed)
@@ -147,7 +167,7 @@ class CodeGenerator {
 
          // These methods generate the Tac instructions that mark the start
          // and end of a function/method definition. 
-    BeginFunc *GenBeginFunc();
+    BeginFunc *GenBeginFunc(FnDecl*);
     void GenEndFunc();
 
     
@@ -176,14 +196,6 @@ class CodeGenerator {
     // private helper, not for public user
     Location *GenMethodCall(Location*rcvr, Location*meth, List<Location*> *args, bool hasReturnValue);
     void GenHaltWithMessage(const char *msg);
-
-private:
-    // The functions we will be using to properly
-    // assign registers instead of the initial few.
-    void BuildCFG();
-    void LiveVariableAnalysis();
-    void BuildInterferenceGraph();
-    void ColorGraph();
 };
 
 #endif

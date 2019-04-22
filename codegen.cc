@@ -13,11 +13,385 @@
 #include "errors.h"
 #include <stack>
 #include "hashtable.h"
+
+using namespace std;
   
 CodeGenerator::CodeGenerator()
 {
   code = new List<Instruction*>();
+  labels = new unordered_map<string, Instruction*>;
+  deleted_code = new vector<Instruction*>;
+  interference_graph = new List<Location*>();
   curGlobalOffset = 0;
+}
+
+void CodeGenerator::CreateCFG(int begin)
+{
+    BeginFunc* bf = dynamic_cast<BeginFunc*>(code->Nth(begin));
+
+    for (int i = begin; i < NumInstructions(); i++)
+    {
+        EndFunc* ef = dynamic_cast<EndFunc*>(code->Nth(i));
+        if (ef) break;
+
+        Goto* gt = dynamic_cast<Goto*>(code->Nth(i));
+        if (gt)
+        {
+            string s(gt->GetLabel());
+            gt->AddEdge((*labels)[s]);
+            continue;
+        }
+
+        IfZ* ifz = dynamic_cast<IfZ*>(code->Nth(i));
+        if (ifz)
+        {
+            string s(ifz->GetLabel())
+            ifz->AddEdge((*labels)[s]);
+            ifz->AddEdge(code->Nth(i + 1));
+            continue;
+        }
+
+        Return* ret = dynamic_cast<Return*>(code->Nth(i));
+        if (ret) continue;
+
+        code->Nth(i)->AddEdge(code->Nth(i + 1));
+    }
+
+    do
+    {
+        LivenessAnalysis(begin);
+    } while (DeadCodeAnalysis(begin));
+
+    BuildInterferenceGraph(begin);
+    ColorGraph();
+
+    interference_graph->Clear();
+    deleted_code->clear();
+}
+
+void CodeGenerator::LivenessAnalysis(int begin)
+{
+    Instruction* instr;
+    Instruction* edge;
+
+    BeginFunc* bf = dynamic_cast<BeginFunc*>(code->Nth(begin));
+
+    bool changed = true;
+    List<Location*> empty;
+    for (int i = begin; i < NumInstructions(); i++)
+        code->Nth(i)->in_set = empty;
+
+    while (changed)
+    {
+        changed = false;
+
+        for (int i = begin; i < NumInstructions(); i++)
+        {
+            List<Location*> out_set;
+            instr = code->Nth(i);
+
+            for (int j = 0; j < instr->GetNumEdges(); j++)
+            {
+                edge = instr->GetEdge(j);
+                bool deleted = false;
+
+                for (int k = 0; k < deleted_code->size(); k++)
+                {
+                    if (edge == (*deleted_code)[k])
+                    {
+                        deleted = true;
+                        break;    
+                    }
+                }
+
+                if (deleted) continue;
+
+                for (int k = 0; k < edge->in_set.NumElements(); k++)
+                {
+                    Location* el = edge->in_set.Nth(k);
+                    bool found = false;
+
+                    for (int a = 0; a < out_set.NumElements(); a++)
+                    {
+                        if (out_set.Nth(a) == el)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    if (!found) 
+                        out_set.Append(el);
+                }
+            }
+
+            instr->out_set = out_set;
+            List<Location*> in_set_prime = out_set;
+            List<Location*> kill_set = instr->KillSet();
+            List<Location*> gen_set = instr->GenSet();
+
+            for (int j = 0; j < in_set_prime.NumElements(); j++)
+            {
+                for (int k = 0; k < kill_set.NumElements(); k++)
+                {
+                    if (in_set_prime.Nth(j) == kill_set.Nth(k))
+                    {
+                        in_set_prime.RemoveAt(j);
+                        j--;
+                        break;
+                    }
+                }
+            }
+
+            for (int j = 0; j < gen_set.NumElements(); j++)
+            {
+                bool found = false;
+                for (int k = 0; k < in_set_prime.NumElements(); k++)
+                {
+                    if (in_set_prime.Nth(k) == gen_set.Nth(j))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                    in_set_prime.Append(gen_set.Nth(j));
+            }
+
+            List<Location*> temp_prime_set = in_set_prime;
+
+            bool present_out_set = false;
+            bool sets_different = false;
+
+            for (int j = 0; j < instr->in_set.NumElements(); j++)
+            {
+                for (int k = 0; k < temp_prime_set.NumElements(); k++)
+                {
+                    if (instr->in_set.Nth(j) == temp_prime_set.Nth(k))
+                    {
+                        temp_prime_set.RemoveAt(k);
+                        present_out_set = true;
+                        break;
+                    }
+                }
+
+                if (present_out_set)
+                {
+                    present_out_set = false;
+                    continue;
+                }
+
+                else 
+                {
+                    sets_different = true;
+                    break;
+                }
+            }
+
+            if (sets_different || temp_prime_set.NumElements() != 0)
+            {
+                instr->in_set = in_set_prime;
+                changed = true;
+            }
+
+        }
+    }
+}
+
+bool CodeGenerator::DeadCodeAnalysis(int begin)
+{
+    Instruction* instr;
+    bool changed = false;
+
+    for (int i = begin; i < NumInstructions(); i++)
+    {
+        instr = code->Nth(i);
+        if (instr->IsDead())
+        {
+            code->RemoveAt(i);
+            i--;
+            changed = true;
+            deleted_code->push_back(instr);
+        }
+    }
+
+    return changed;
+}
+
+void CodeGenerator::BuildInterferenceGraph(int begin)
+{
+    List<Location*> kill_set, in_set, out_set;
+
+    in_set = code->Nth(begin)->in_set;
+    interference_graph->AppendAll(in_set);
+    interference_graph->Unique();
+
+    for (int i = 0; i < in_set.NumElements(); i++)
+    {
+        for (int j = i + 1; j < in_set.NumElements(); j++)
+            in_set.Nth(i)->AddEdge(in_set.Nth(j));
+    }
+
+    for (int i = begin + 1; i < NumInstructions(); i++)
+    {
+        out_set = code->Nth(i)->out_set;
+        kill_set = code->Nth(i)->KillSet();
+        interference_graph->AppendAll(out_set);
+        interference_graph->Unique();
+
+        for (int j = 0; j < kill_set.NumElements(); j++)
+        {
+            for (int k = 0; k < out_set.NumElements(); k++)
+            {
+                if (out_set.Nth(k) != kill_set.Nth(j))
+                    out_set.Nth(k)->AddEdge(kill_set.Nth(j));
+            }
+        }
+    }
+}
+
+void CodeGenerator::ColorGraph()
+{
+    bool can_still_color = false;
+    stack<Location*> degree;
+    List<Location*> removed;
+
+    if (interference_graph->NumElements() == 0) return;
+
+    while (!can_still_color)
+    {
+        int temp;
+
+        while ((temp = FindNode(removed)) != -1)
+        {
+            Location* sat = interference_graph->Nth(temp);
+            removed.Append(sat);
+            degree.push(sat);
+        }
+
+        if (removed.NumElements() == interference_graph->NumElements())
+        {
+            Location* node = degree.top();
+            degree.pop();
+            node->SetRegister(Mips::Register(8));
+            if (!strcmp(node->GetName(), "this"))
+                node->SetRegister(Mips::Register(3));
+            bool same_reg = false;
+            while (!degree.empty())
+            {
+                node = degree.top();
+                degree.pop();
+
+                if (!strcmp(node->GetName(), "this"))
+                {
+                    node->SetRegister(Mips::Register(3));
+                    continue;
+                }
+
+                for (int i = 8; i <= 25; i++)
+                {
+                    for (int j = 0; j < node->GetNumEdges(); j++)
+                    {
+                        if (node->GetEdge(j)->GetRegister() == Mips::Register(i))
+                        {
+                            same_reg = true;
+                            break;
+                        }
+                    }
+
+                    if (same_reg)
+                    {
+                        same_reg = false;
+                        continue;
+                    }
+
+                    else 
+                    {
+                        node->SetRegister(Mips::Register(i));
+                        break;
+                    }
+                }
+            }
+
+            can_still_color = true;
+        }
+
+        else 
+        {
+            int ind = FindMaxK(removed);
+            if (ind != -1)
+                removed.Append(interference_graph->Nth(ind));
+        }
+    }
+}
+
+int CodeGenerator::FindNode(List<Location*> removed)
+{
+    int count = 0;
+    for (int i = 0; i < interference_graph->NumElements(); i++)
+    {
+        int num_edges = interference_graph->Nth(i)->GetNumEdges();
+
+        if (Removed(interference_graph->Nth(i), removed)) continue;
+
+        if (num_edges < Mips::NumGeneralPurposeRegs) return i;
+
+        else 
+        {
+            for (int j = 0; j < num_edges; j++)
+            {
+                if (!Removed(interference_graph->Nth(i)->GetEdge(j), removed))
+                    count++;
+            }
+
+            if (count < Mips::NumGeneralPurposeRegs) return i;
+        }
+    }
+
+    return -1;
+}
+
+int CodeGenerator::FindMaxK(List<Location*> removed)
+{
+    int max = -1;
+    int count = 0;
+    int ind = -1;
+    for (int i = 0; i < interference_graph->NumElements(); i++)
+    {
+        if (Removed(interference_graph->Nth(i), removed))
+            continue;
+        
+        count = 0;
+
+        for (int j = 0; j < interference_graph->Nth(i)->GetNumEdges(); j++)
+        {
+            if (Removed(interference_graph->Nth(i)->GetEdge(j), removed))
+                continue;
+            
+            else
+                count++;
+        }
+
+        if (count > max)
+        {
+            max = count;
+            ind = i;
+        }
+    }
+
+    return ind;
+}
+
+bool CodeGenerator::Removed(Location* check, List<Location*> removed)
+{
+    for (int i = 0; i < removed.NumElements(); i++)
+    {
+        if (check == removed.Nth(i))
+            return true;
+    }
+
+    return false;
 }
 
 char *CodeGenerator::NewLabel()
@@ -118,7 +492,10 @@ Location *CodeGenerator::GenBinaryOp(const char *opName, Location *op1,
 
 void CodeGenerator::GenLabel(const char *label)
 {
-  code->Append(new Label(label));
+    Instruction *instr = new Label(label);
+    code->Append(instr);
+    string s = label;
+    (*labels)[s] = instr;
 }
 
 void CodeGenerator::GenIfZ(Location *test, const char *label)
@@ -137,21 +514,33 @@ void CodeGenerator::GenReturn(Location *val)
 }
 
 
-BeginFunc *CodeGenerator::GenBeginFunc()
+BeginFunc *CodeGenerator::GenBeginFunc(FnDecl* fn)
 {
-  BeginFunc *result = new BeginFunc;
-  code->Append(result);
-  insideFn = code->NumElements() - 1;
-  curStackOffset = OffsetToFirstLocal;
-  return result;
+    BeginFunc *result = new BeginFunc;
+    code->Append(inside_fn = result);
+    List<VarDecl*>*formals = fn->GetFormals();
+    int start = OffsetToFirstParam;
+    
+    if (fn->IsMethodDecl()) start += VarSize;
+    
+    for (int i = 0; i < formals->NumElements(); i++)
+    {
+        Location* param = new Location(fpRelative, i*VarSize + start, formals->Nth(i)->GetName());
+        formals->Nth(i)->rtLoc = param;
+        result->AddParameter(param);
+    }
+
+    curStackOffset = OffsetToFirstLocal;
+    result->CheckMethod(fn);
+
+    return result;
 }
 
 void CodeGenerator::GenEndFunc()
 {
-  code->Append(new EndFunc());
-  BeginFunc *beginFunc = dynamic_cast<BeginFunc*>(code->Nth(insideFn));
-  Assert(beginFunc != NULL);
-  beginFunc->SetFrameSize(OffsetToFirstLocal-curStackOffset);
+    code->Append(new EndFunc());
+    inside_fn->SetFrameSize(OffsetToFirstLocal - curStackOffset);
+    inside_fn = NULL;
 }
 
 void CodeGenerator::GenPushParam(Location *param)
