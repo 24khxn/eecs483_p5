@@ -85,6 +85,8 @@ class Mips {
 
     void FillRegister(Location *src, Register reg);
     void SpillRegister(Location *dst, Register reg);
+    void SaveCaller(Location *location);
+    void RestoreCaller(Location *location);
 };
 
 

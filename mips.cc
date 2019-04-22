@@ -476,4 +476,18 @@ Mips::Mips() {
 }
 const char *Mips::mipsName[NumOps];
 
+void Mips::SaveCaller(Location *location)
+{
+  if(location->GetRegister())
+  {
+    SpillRegister(location, location->GetRegister());
+  }
+}
 
+void Mips::RestoreCaller(Location *location)
+{
+  if(location->GetRegister())
+  {
+    FillRegister(location, location->GetRegister());
+  }
+}

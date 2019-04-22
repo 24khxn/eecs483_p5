@@ -181,7 +181,15 @@ void Return::EmitSpecific(Mips *mips) {
   mips->EmitReturn(val);
 }
 
-
+List<Location*> Return::MakeGenSet()
+{
+  List<Location*> gen_set;
+  if(val)
+  {
+    gen_set.Append(val);
+  }
+  return gen_set;
+}
 
 PushParam::PushParam(Location *p)
   :  param(p) {
@@ -192,6 +200,12 @@ void PushParam::EmitSpecific(Mips *mips) {
   mips->EmitParam(param);
 } 
 
+List<Location*> PushParam::MakeGenSet()
+{
+  List<Location*> gen_set;
+  gen_set.Append(param);
+  return gen_set;
+}
 
 PopParams::PopParams(int nb)
   :  numBytes(nb) {
@@ -201,17 +215,34 @@ void PopParams::EmitSpecific(Mips *mips) {
   mips->EmitPopParams(numBytes);
 } 
 
-
-
-
 LCall::LCall(const char *l, Location *d)
   :  label(strdup(l)), dst(d) {
   sprintf(printed, "%s%sLCall %s", dst? dst->GetName(): "", dst?" = ":"", label);
 }
 void LCall::EmitSpecific(Mips *mips) {
   mips->EmitLCall(dst, label);
+
+  //Now we need to do caller save stuff
+  for(int i = 0; i < in_set.NumElements(); i++)
+  {
+    mips->SaveCaller(in_set.Nth(i));
+  }
+  mips->EmitLCall(dst, label);
+  for(int i = 0; i < in_set.NumElements(); i++)
+  {
+    mips->RestoreCaller(in_set.Nth(i));
+  }
 }
 
+List<Location*> LCall::MakeKillSet()
+{
+  List<Location*> kill_set;
+  if(dst)
+  {
+    kill_set.Append(dst);
+  }
+  return kill_set;
+}
 
 ACall::ACall(Location *ma, Location *d)
   : dst(d), methodAddr(ma) {
@@ -221,9 +252,41 @@ ACall::ACall(Location *ma, Location *d)
 }
 void ACall::EmitSpecific(Mips *mips) {
   mips->EmitACall(dst, methodAddr);
+
+  //Now we need to do caller save stuff
+  for(int i = 0; i < out_set.NumElements(); i++)
+  {
+    if(out_set.Nth(i) != dst)
+    {
+      mips->SaveCaller(out_set.Nth(i));
+    }
+  }
+  mips->EmitACall(dst, methodAddr);
+  for(int i = 0; i < out_set.NumElements(); i++)
+  {
+    if(out_set.Nth(i) != dst)
+    {
+      mips->RestoreCaller(out_set.Nth(i));
+    }
+  }
 } 
 
+List<Location*> ACall::MakeGenSet()
+{
+  List<Location*> gen_set;
+  gen_set.Append(methodAddr);
+  return gen_set;
+}
 
+List<Location*> ACall::MakeKillSet()
+{
+  List<Location*> kill_set;
+  if(dst)
+  {
+    kill_set.Append(dst);
+  }
+  return kill_set;
+}
 
 VTable::VTable(const char *l, List<const char *> *m)
   : methodLabels(m), label(strdup(l)) {
@@ -240,5 +303,3 @@ void VTable::Print() {
 void VTable::EmitSpecific(Mips *mips) {
   mips->EmitVTable(label, methodLabels);
 }
-
-

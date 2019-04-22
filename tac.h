@@ -44,12 +44,14 @@ class Location
     int offset;
     Location *reference;
     int refOffset;
+
+    Mips::Register reg;
 	  
   public:
     Location(Segment seg, int offset, const char *name);
     Location(Location *base, int refOff) :
-	variableName(base->variableName), segment(base->segment),
-	offset(base->offset), reference(base), refOffset(refOff) {}
+	  variableName(base->variableName), segment(base->segment),
+	  offset(base->offset), reference(base), refOffset(refOff) {}
  
     const char *GetName()           { return variableName; }
     Segment GetSegment()            { return segment; }
@@ -57,6 +59,9 @@ class Location
     bool IsReference()              { return reference != NULL; }
     Location *GetReference()        { return reference; }
     int GetRefOffset()              { return refOffset; }
+
+    void SetRegister(Mips::Register r) { reg = r; }
+    Mips::Register GetRegister()    { return reg; }
 };
  
 
@@ -69,9 +74,15 @@ class Instruction {
         char printed[128];
 	  
     public:
-	virtual void Print();
-	virtual void EmitSpecific(Mips *mips) = 0;
-	virtual void Emit(Mips *mips);
+      List<Location*> in_set;
+      List<Location*> out_set;
+	    virtual void Print();
+	    virtual void EmitSpecific(Mips *mips) = 0;
+	    virtual void Emit(Mips *mips);
+
+      virtual void EmitSpecific(Mips *mips) = 0;
+      virtual List<Location*> MakeGenSet() { List<Location*> empty; return empty; }
+      virtual List<Location*> MakeKillSet() { List<Location*> empty; return empty; }
 };
 
   
@@ -208,6 +219,7 @@ class Return: public Instruction {
   public:
     Return(Location *val);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeGenSet();
 };   
 
 class PushParam: public Instruction {
@@ -215,6 +227,7 @@ class PushParam: public Instruction {
   public:
     PushParam(Location *param);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeGenSet();
 }; 
 
 class PopParams: public Instruction {
@@ -230,6 +243,7 @@ class LCall: public Instruction {
   public:
     LCall(const char *labe, Location *result);
     void EmitSpecific(Mips *mips);
+    List<Location*> MakeKillSet();
 };
 
 class ACall: public Instruction {
@@ -237,6 +251,9 @@ class ACall: public Instruction {
   public:
     ACall(Location *meth, Location *result);
     void EmitSpecific(Mips *mips);
+  public:
+    List<Location*> MakeGenSet();
+    List<Location*> MakeKillSet();
 };
 
 class VTable: public Instruction {
