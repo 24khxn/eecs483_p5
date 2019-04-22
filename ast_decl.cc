@@ -257,17 +257,15 @@ bool FnDecl::MatchesPrototype(FnDecl *other) {
 }
 
 void FnDecl::Emit(CodeGenerator *cg) {
-    if (body) {
+
+    if (body)
+    {
         cg->GenLabel(GetFunctionLabel());
-        cg->GenBeginFunc();
-	int start = IsMethodDecl() ? 1 : 0;
-	for (int i = 0; i < formals->NumElements(); i++) {
-	    VarDecl *d = formals->Nth(i);
-	    d->rtLoc = cg->GenParameter(i + start, d->GetName());
-	}
+        int begin = cg->NumInstructions();
+        cg->GenBeginFunc(this);
         body->Emit(cg);
         cg->GenEndFunc();
-        
+        cg->CreateCFG(begin);
     }
 }
 

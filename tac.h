@@ -25,6 +25,7 @@
 
 #include "list.h" // for VTable
 #include "mips.h"
+#include "ast_decl.h"
 #include <string>
 
 using namespace std;
@@ -38,6 +39,7 @@ using namespace std;
     // with name "num", segment fpRelative, and offset -8. 
  
 typedef enum {fpRelative, gpRelative} Segment;
+
 
 class Location
 {
@@ -239,7 +241,7 @@ class BeginFunc: public Instruction {
     // used to backpatch the instruction with frame size once known
     void SetFrameSize(int numBytesForAllLocalsAndTemps);
     void EmitSpecific(Mips *mips);
-    void AddParamter(Location *param);
+    void AddParameter(Location *param);
     void CheckMethod(FnDecl* fn);
 };
 

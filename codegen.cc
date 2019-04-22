@@ -45,7 +45,7 @@ void CodeGenerator::CreateCFG(int begin)
         IfZ* ifz = dynamic_cast<IfZ*>(code->Nth(i));
         if (ifz)
         {
-            string s(ifz->GetLabel())
+            string s(ifz->GetLabel());
             ifz->AddEdge((*labels)[s]);
             ifz->AddEdge(code->Nth(i + 1));
             continue;
@@ -127,8 +127,8 @@ void CodeGenerator::LivenessAnalysis(int begin)
 
             instr->out_set = out_set;
             List<Location*> in_set_prime = out_set;
-            List<Location*> kill_set = instr->KillSet();
-            List<Location*> gen_set = instr->GenSet();
+            List<Location*> kill_set = instr->MakeKillSet();
+            List<Location*> gen_set = instr->MakeGenSet();
 
             for (int j = 0; j < in_set_prime.NumElements(); j++)
             {
@@ -236,7 +236,7 @@ void CodeGenerator::BuildInterferenceGraph(int begin)
     for (int i = begin + 1; i < NumInstructions(); i++)
     {
         out_set = code->Nth(i)->out_set;
-        kill_set = code->Nth(i)->KillSet();
+        kill_set = code->Nth(i)->MakeKillSet();
         interference_graph->AppendAll(out_set);
         interference_graph->Unique();
 

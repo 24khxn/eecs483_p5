@@ -135,6 +135,12 @@ List<Location*> Assign::MakeKillSet()
     set.Append(dst);
     return set;
 }
+List<Location*> Assign::MakeGenSet()
+{
+    List<Location*> set;
+    set.Append(src);
+    return set;
+}
 bool Assign::IsDead()
 {
     for (int i = 0; i < out_set.NumElements(); i++)
@@ -305,7 +311,7 @@ void BeginFunc::EmitSpecific(Mips *mips) {
   }
 }
 
-void BeginFunc::AddParamter(Location* param)
+void BeginFunc::AddParameter(Location* param)
 {
   parameters.Append(param);
 }

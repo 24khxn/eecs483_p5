@@ -101,7 +101,6 @@ void Mips::Emit(const char *fmt, ...)
  */
 void Mips::EmitLoadConstant(Location *dst, int val)
 {
-  Register reg = rd;
   Register reg = dst->GetRegister() ? dst->GetRegister() : rd;
   Emit("li %s, %d\t\t# load constant value %d into %s", regs[reg].name,
 	 val, val, regs[reg].name);
