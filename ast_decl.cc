@@ -36,7 +36,6 @@ void VarDecl::Check() {
 }
 bool VarDecl::IsIvarDecl() { return dynamic_cast<ClassDecl*>(parent) != NULL;}
 void VarDecl::Emit(CodeGenerator *cg) { 
-    if (rtLoc != NULL) return;
     if (dynamic_cast<Program*>(parent)) {
         rtLoc = cg->GenGlobalVariable(GetName());
     } else if (!dynamic_cast<ClassDecl*>(parent)) {
@@ -55,7 +54,6 @@ ClassDecl::ClassDecl(Identifier *n, NamedType *ex, List<NamedType*> *imp, List<D
     cType->SetParent(this);
     cType->SetDeclForType(this);
     convImp = NULL;
-    thisLocation = NULL;
     vtable = new List<const char*>;
     nextIvarOffset = 4;
 }
@@ -130,7 +128,6 @@ bool ClassDecl::Implements(Type *other) {
     return false;
 }
 void ClassDecl::Emit(CodeGenerator *cg) {
-    thisLocation = cg->GenParameter(0, "this");
     members->EmitAll(cg);
     cg->GenVTable(GetName(), vtable);
 }
@@ -259,15 +256,11 @@ bool FnDecl::MatchesPrototype(FnDecl *other) {
 void FnDecl::Emit(CodeGenerator *cg) {
     if (body) {
         cg->GenLabel(GetFunctionLabel());
-        cg->GenBeginFunc();
-	int start = IsMethodDecl() ? 1 : 0;
-	for (int i = 0; i < formals->NumElements(); i++) {
-	    VarDecl *d = formals->Nth(i);
-	    d->rtLoc = cg->GenParameter(i + start, d->GetName());
-	}
+        int begin = cg->numInstructions();
+        cg->GenBeginFunc(this);
         body->Emit(cg);
         cg->GenEndFunc();
-        
+        cg->createCFG(begin);
     }
 }
 

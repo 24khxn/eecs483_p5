@@ -210,12 +210,15 @@ Type* This::CheckAndComputeResultType() {
        ReportError::ThisOutsideClassScope(this);
    if (!enclosingClass) return Type::errorType;
    return enclosingClass->GetDeclaredType();
-}
+ }
 
-void This::Emit(CodeGenerator *cg) {
+static Location *ThisLocation = new Location(fpRelative, 4, "this");
+
+ void This::Emit(CodeGenerator *cg) {
    if (!result)
-    result = enclosingClass->GetThisLocation();
-}
+    result = ThisLocation;
+ }
+ 
    
   
 ArrayAccess::ArrayAccess(yyltype loc, Expr *b, Expr *s) : LValue(loc) {
@@ -281,10 +284,8 @@ void FieldAccess::EmitWithoutDereference(CodeGenerator *cg) {
     if (base) {
         base->Emit(cg);
         result = new Location(base->result, fd->GetOffset());
-    } else {
-	fd->Emit(cg);
+    } else
         result = dynamic_cast<VarDecl*>(fd)->rtLoc;
-    }
 }
 
 Call::Call(yyltype loc, Expr *b, Identifier *f, List<Expr*> *a) : Expr(loc)  {

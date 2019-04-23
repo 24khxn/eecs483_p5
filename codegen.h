@@ -12,9 +12,12 @@
 #include <stdlib.h>
 #include "list.h"
 #include "tac.h"
+#include <string.h>
+#include <unordered_map>
 class FnDecl;
  
 
+using namespace std;
               // These codes are used to identify the built-in functions
 typedef enum { Alloc, ReadLine, ReadInteger, StringEqual,
                PrintInt, PrintString, PrintBool, Halt, NumBuiltIns } BuiltIn;
@@ -22,9 +25,20 @@ typedef enum { Alloc, ReadLine, ReadInteger, StringEqual,
 class CodeGenerator {
   private:
     List<Instruction*> *code;
-    int curStackOffset, curGlobalOffset;
-    int insideFn;
+    List<Location*>* interGraph;
 
+    int curStackOffset, curGlobalOffset;
+    BeginFunc *insideFn;
+    unordered_map<string, Instruction*>* labels;
+    vector<Instruction*>* deletedCode;
+    
+    void livenessAnalysis(int begin);
+    bool deadCodeAnalysis(int begin);
+    void interferenceGraph(int begin);
+	int  findNode(List<Location*> removed); 
+	int  findMaxKNode(List<Location*> removed); 
+	bool wasRemoved(Location* check, List<Location*> removed); 
+	
   public:
            // Here are some class constants to remind you of the offsets
            // used for globals, locals, and parameters. You will be
@@ -43,18 +57,25 @@ class CodeGenerator {
 
     CodeGenerator();
     
+    //Create CFG for use in liveness analysis
+    void createCFG(int begin);
+    
+    //Get Kcoloring
+    void kColoring();
+
+    
+    int numInstructions() { return code->NumElements(); }
+    
          // Assigns a new unique label name and returns it. Does not
          // generate any Tac instructions (see GenLabel below if needed)
     char *NewLabel();
 
          // Creates and returns a Location for a new uniquely named
          // temp variable. Does not generate any Tac instructions
-    Location *GenTempVariable();
+    Location *GenTempVar();
 
     Location *GenLocalVariable(const char *varName);
     Location *GenGlobalVariable(const char *varName);
-    Location *GenParameter(int index, const char *varName);
-    Location *GenIndirect(Location* base, int offset);
          // Generates Tac instructions to load a constant value. Creates
          // a new temp var to hold the result. The constant 
          // value is passed as an integer, it can be 0 for integer zero,
@@ -147,7 +168,7 @@ class CodeGenerator {
 
          // These methods generate the Tac instructions that mark the start
          // and end of a function/method definition. 
-    BeginFunc *GenBeginFunc(FnDecl*);
+    BeginFunc *GenBeginFunc(FnDecl *fn);
     void GenEndFunc();
 
     
@@ -176,14 +197,6 @@ class CodeGenerator {
     // private helper, not for public user
     Location *GenMethodCall(Location*rcvr, Location*meth, List<Location*> *args, bool hasReturnValue);
     void GenHaltWithMessage(const char *msg);
-
-private:
-    // The functions we will be using to properly
-    // assign registers instead of the initial few.
-    void BuildCFG();
-    void LiveVariableAnalysis();
-    void BuildInterferenceGraph();
-    void ColorGraph();
 };
 
 #endif

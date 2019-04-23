@@ -39,7 +39,7 @@ class Decl : public Node
     virtual bool IsFnDecl() { return false; } 
     virtual bool IsMethodDecl() { return false; }
     virtual bool IsIvarDecl() { return false; }
-    int offset;// used for methods and ivars only
+  int offset;// used for methods and ivars only
     void SetOffset(int off) { offset = off; }
     int GetOffset() { return offset; }
 };
@@ -68,7 +68,6 @@ class ClassDecl : public Decl
     List<NamedType*> *implements;
     NamedType *cType;
     List<InterfaceDecl*> *convImp;
-    Location *thisLocation;
     List<const char*> *vtable;
     int nextIvarOffset;
 
@@ -87,7 +86,6 @@ class ClassDecl : public Decl
     void AddMethod(FnDecl*d, Decl *p);
     void AddIvar(VarDecl*d, Decl *p);
     void AddField(Decl*d);
-    Location *GetThisLocation() { return thisLocation; }
     int GetClassSize() { return nextIvarOffset; }
 };
 

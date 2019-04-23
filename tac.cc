@@ -7,15 +7,52 @@
 #include "mips.h"
 #include <string.h>
 #include <deque>
+#include <iostream>
+
+using namespace std;
 
 Location::Location(Segment s, int o, const char *name) :
-  variableName(strdup(name)), segment(s), offset(o),
-  reference(NULL), reg(Mips::zero) {}
+  variableName(strdup(name)), segment(s), offset(o), reference(NULL), reg(Mips::zero) 
+  {
+    edges = new List<Location*>();
+  }
 
-Instruction::Instruction()
+void Location::addEdge(Location* edge, bool recall)
 {
-    live_vars_in = new LiveVars_t;
-    live_vars_out = new LiveVars_t;
+    if (!recall)
+    {
+        for (int i = 0; i < edges->NumElements(); i++)
+        {
+            if (edge == edges->Nth(i))
+                return;
+        }
+        edges->Append(edge); //add edge to current location
+        edge->addEdge(this, true); //two way edge
+    }
+    else
+        edges->Append(edge);
+
+}
+
+int Location::getNumEdges()
+{
+    return edges->NumElements();
+}
+
+Location* Location::getEdge(int n)
+{
+    return edges->Nth(n);
+}
+
+void Location::removeAllEdges()
+{
+    edges->Clear();
+}
+
+string Instruction::TACString()
+{
+    string s = printed;
+    return s;
 }
  
 void Instruction::Print() {
@@ -29,19 +66,6 @@ void Instruction::Emit(Mips *mips) {
   EmitSpecific(mips);
 }
 
-LiveVars_t* Instruction::FilterGlobalVars(LiveVars_t* lv)
-{
-    LiveVars_t* result = new LiveVars_t;
-
-    for (auto var: *lv)
-    {
-        if (var->GetSegment() == fpRelative)
-            result->insert(var);
-    }
-
-    return result;
-}
-
 LoadConstant::LoadConstant(Location *d, int v)
   : dst(d), val(v) {
   Assert(dst != NULL);
@@ -50,10 +74,20 @@ LoadConstant::LoadConstant(Location *d, int v)
 void LoadConstant::EmitSpecific(Mips *mips) {
   mips->EmitLoadConstant(dst, val);
 }
-
-LiveVars_t *LoadConstant::GetKills()
+List<Location*> LoadConstant::KillSet()
 {
-    return FilterGlobalVars(new LiveVars_t{dst});
+    List<Location*> set;
+    set.Append(dst);
+    return set;
+}
+bool LoadConstant::isDead()
+{
+    for (int i = 0; i < outSet.NumElements(); i++)
+    {
+        if (outSet.Nth(i) == dst)
+            return false;
+    }
+    return true;
 }
 
 LoadStringConstant::LoadStringConstant(Location *d, const char *s)
@@ -68,10 +102,20 @@ LoadStringConstant::LoadStringConstant(Location *d, const char *s)
 void LoadStringConstant::EmitSpecific(Mips *mips) {
   mips->EmitLoadStringConstant(dst, str);
 }
-
-LiveVars_t *LoadStringConstant::GetKills()
+List<Location*> LoadStringConstant::KillSet()
 {
-    return FilterGlobalVars(new LiveVars_t {dst});
+    List<Location*> set;
+    set.Append(dst);
+    return set;
+}
+bool LoadStringConstant::isDead()
+{
+    for (int i = 0; i < outSet.NumElements(); i++)
+    {
+        if (outSet.Nth(i) == dst)
+            return false;
+    }
+    return true;
 }
      
 
@@ -84,10 +128,6 @@ void LoadLabel::EmitSpecific(Mips *mips) {
   mips->EmitLoadLabel(dst, label);
 }
 
-LiveVars_t* LoadLabel::GetKills()
-{
-    return FilterGlobalVars(new LiveVars_t {dst});
-}
 
 
 Assign::Assign(Location *d, Location *s)
@@ -98,18 +138,27 @@ Assign::Assign(Location *d, Location *s)
 void Assign::EmitSpecific(Mips *mips) {
   mips->EmitCopy(dst, src);
 }
-
-LiveVars_t *Assign::GetKills()
+List<Location*> Assign::KillSet()
 {
-    return FilterGlobalVars(new LiveVars_t {dst});
+    List<Location*> set;
+    set.Append(dst);
+    return set;
 }
-
-LiveVars_t *Assign::GetGens()
+List<Location*> Assign::GenSet()
 {
-    return FilterGlobalVars(new LiveVars_t {src});
+    List<Location*> set;
+    set.Append(src);
+    return set;
 }
-
-
+bool Assign::isDead()
+{
+    for (int i = 0; i < outSet.NumElements(); i++)
+    {
+        if (outSet.Nth(i) == dst)
+            return false;
+    }
+    return true;
+}
 
 Load::Load(Location *d, Location *s, int off)
   : dst(d), src(s), offset(off) {
@@ -122,17 +171,18 @@ Load::Load(Location *d, Location *s, int off)
 void Load::EmitSpecific(Mips *mips) {
   mips->EmitLoad(dst, src, offset);
 }
-
-LiveVars_t *Load::GetKills()
+List<Location*> Load::GenSet()
 {
-    return FilterGlobalVars(new LiveVars_t {dst});
+    List<Location*> set;
+    set.Append(src);
+    return set;
 }
-
-LiveVars_t *Load::GetGens()
+List<Location*> Load::KillSet()
 {
-    return FilterGlobalVars(new LiveVars_t {src});
+    List<Location*> set;
+    set.Append(dst);
+    return set;
 }
-
 
 
 Store::Store(Location *d, Location *s, int off)
@@ -146,12 +196,13 @@ Store::Store(Location *d, Location *s, int off)
 void Store::EmitSpecific(Mips *mips) {
   mips->EmitStore(dst, src, offset);
 }
-
-LiveVars_t *Store::GetGens()
+List<Location*> Store::GenSet()
 {
-    return FilterGlobalVars(new LiveVars_t {dst, src});
+    List<Location*> set;
+    set.Append(src);
+    set.Append(dst);
+    return set;
 }
-
  
 const char * const BinaryOp::opName[Mips::NumOps]  = {"+", "-", "*", "/", "%", "==", "<", "&&", "||"};;
 
@@ -172,18 +223,28 @@ BinaryOp::BinaryOp(Mips::OpCode c, Location *d, Location *o1, Location *o2)
 void BinaryOp::EmitSpecific(Mips *mips) {	  
   mips->EmitBinaryOp(code, dst, op1, op2);
 }
-
-LiveVars_t *BinaryOp::GetKills()
+List<Location*> BinaryOp::KillSet()
 {
-    return FilterGlobalVars(new LiveVars_t {dst});
+    List<Location*> set;
+    set.Append(dst);
+    return set;
 }
-
-LiveVars_t *BinaryOp::GetGens()
+List<Location*> BinaryOp::GenSet()
 {
-    return FilterGlobalVars(new LiveVars_t {op1, op2});
+    List<Location*> set;
+    set.Append(op1);
+    set.Append(op2);
+    return set;
 }
-
-
+bool BinaryOp::isDead()
+{
+    for (int i = 0; i < outSet.NumElements(); i++)
+    {
+        if (outSet.Nth(i) == dst)
+            return false;
+    }
+    return true;
+}
 
 Label::Label(const char *l) : label(strdup(l)) {
   Assert(label != NULL);
@@ -205,6 +266,11 @@ Goto::Goto(const char *l) : label(strdup(l)) {
 void Goto::EmitSpecific(Mips *mips) {	  
   mips->EmitGoto(label);
 }
+string Goto::getLabel()
+{
+    string s = label;
+    return s;
+}
 
 
 IfZ::IfZ(Location *te, const char *l)
@@ -215,18 +281,21 @@ IfZ::IfZ(Location *te, const char *l)
 void IfZ::EmitSpecific(Mips *mips) {	  
   mips->EmitIfZ(test, label);
 }
-
-LiveVars_t *IfZ::GetGens()
+string IfZ::getLabel()
 {
-    return FilterGlobalVars(new LiveVars_t {test});
+    string s = label;
+    return s;
+}
+List<Location*> IfZ::GenSet()
+{
+    List<Location*> set;
+    set.Append(test);
+    return set;
 }
 
-
-
-BeginFunc::BeginFunc(List<Location*> *forms) {
+BeginFunc::BeginFunc() {
   sprintf(printed,"BeginFunc (unassigned)");
   frameSize = -555; // used as sentinel to recognized unassigned value
-  formals = forms;
 }
 void BeginFunc::SetFrameSize(int numBytesForAllLocalsAndTemps) {
   frameSize = numBytesForAllLocalsAndTemps; 
@@ -234,6 +303,54 @@ void BeginFunc::SetFrameSize(int numBytesForAllLocalsAndTemps) {
 }
 void BeginFunc::EmitSpecific(Mips *mips) {
   mips->EmitBeginFunction(frameSize);
+  /* pp5: need to load all parameters to the allocated registers.
+   */
+  Location* fp = new Location(fpRelative, -800-frameSize, "framePointer");
+  fp->SetRegister(Mips::Register(30));
+
+  if (isMethod)
+  {
+    for (int i = 0; i < inSet.NumElements(); i++)
+    {
+      if (!strcmp(inSet.Nth(i)->GetName(), "this"))
+      {
+        mips->EmitLoad(inSet.Nth(i), fp, 4);
+      }
+    }
+  }
+
+  for (int i = 0; i < parameters.NumElements(); i++)
+  {
+    mips->EmitLoad(parameters.Nth(i), fp, i*4 + 4 + 4*isMethod);
+    // cout << parameters.Nth(i)->GetName() << endl;
+  }
+//   Mips::Register reg;
+//   int numLoaded = 0;
+//   Mips::Register lastReg;
+//   while (numLoaded != inSet.NumElements()) //uses the fact that the first parameter is (always?) the highest register
+//   {
+//     reg = Mips::Register(0);
+//     Location* param;
+//     for (int i = 0; i < inSet.NumElements(); i++)
+//     {
+//       if (inSet.Nth(i)->GetRegister() > reg && inSet.Nth(i)->GetRegister() < lastReg)
+//       {
+//         reg = inSet.Nth(i)->GetRegister();
+//         param = inSet.Nth(i);
+//       }
+//     }
+//     mips->EmitLoad(param, loc, numLoaded*4 + 12 + frameSize);
+//     numLoaded++;
+//     lastReg = reg;
+//   }
+}
+void BeginFunc::addParameter(Location* param)
+{
+  parameters.Append(param);
+}
+void BeginFunc::checkMethod(FnDecl* fn)
+{
+  isMethod = fn->IsMethodDecl();
 }
 
 
@@ -242,7 +359,6 @@ EndFunc::EndFunc() : Instruction() {
 }
 void EndFunc::EmitSpecific(Mips *mips) {
   mips->EmitEndFunction();
-  mips->ClearRegister();
 }
 
 
@@ -253,15 +369,15 @@ Return::Return(Location *v) : val(v) {
 void Return::EmitSpecific(Mips *mips) {	  
   mips->EmitReturn(val);
 }
-
-LiveVars_t *Return::GetGens()
+List<Location*> Return::GenSet()
 {
+    List<Location*> set;
     if (val)
-        return FilterGlobalVars(new LiveVars_t {val});
-    else 
-        return new LiveVars_t;
+    {
+        set.Append(val);
+    }
+    return set;
 }
-
 
 
 PushParam::PushParam(Location *p)
@@ -272,12 +388,12 @@ PushParam::PushParam(Location *p)
 void PushParam::EmitSpecific(Mips *mips) {
   mips->EmitParam(param);
 } 
-
-LiveVars_t *PushParam::GetGens()
+List<Location*> PushParam::GenSet()
 {
-    return FilterGlobalVars(new LiveVars_t {param});
+    List<Location*> set;
+    set.Append(param);
+    return set;
 }
-
 
 PopParams::PopParams(int nb)
   :  numBytes(nb) {
@@ -295,29 +411,30 @@ LCall::LCall(const char *l, Location *d)
   sprintf(printed, "%s%sLCall %s", dst? dst->GetName(): "", dst?" = ":"", label);
 }
 void LCall::EmitSpecific(Mips *mips) {
-
-    for (auto var: *live_vars_in)
+  /* pp5: need to save registers before a function call
+   * and restore them back after the call.
+   */
+    for (int i = 0; i < inSet.NumElements(); i++)
     {
-        if (var->GetRegister())
-            mips->SpillRegister(var, var->GetRegister());
+        mips->SaveCaller(inSet.Nth(i));
     }
 
     mips->EmitLCall(dst, label);
 
-    for (auto var: *live_vars_in)
+    for (int i = 0; i < inSet.NumElements(); i++)
     {
-        if (var->GetRegister())
-            mips->FillRegister(var, var->GetRegister());
+        mips->RestoreCaller(inSet.Nth(i));
     }
 }
-
-LiveVars_t* LCall::GetKills()
+List<Location*> LCall::KillSet()
 {
+    List<Location*> set;    
     if (dst)
-        return FilterGlobalVars(new LiveVars_t {dst});
-    return new LiveVars_t;
+    {
+        set.Append(dst);
+    }
+    return set;
 }
-
 
 ACall::ACall(Location *ma, Location *d)
   : dst(d), methodAddr(ma) {
@@ -326,27 +443,37 @@ ACall::ACall(Location *ma, Location *d)
 	    methodAddr->GetName());
 }
 void ACall::EmitSpecific(Mips *mips) {
-    for (auto var: *live_vars_in)
+  /* pp5: need to save registers before a function call
+   * and restore them back after the call.
+   */
+    for (int i = 0; i < outSet.NumElements(); i++)
     {
-        if (var->GetRegister())
-            mips->SpillRegister(var, var->GetRegister());
+        if (outSet.Nth(i) != dst)
+            mips->SaveCaller(outSet.Nth(i));
     }
 
     mips->EmitACall(dst, methodAddr);
 
-    for (auto var: *live_vars_in)
+    for (int i = 0; i < outSet.NumElements(); i++)
     {
-        if (var->GetRegister())
-            mips->FillRegister(var, var->GetRegister());
+        if (outSet.Nth(i) != dst)
+            mips->RestoreCaller(outSet.Nth(i));
     }
-    
 } 
-
-LiveVars_t* ACall::GetKills()
+List<Location*> ACall::GenSet()
 {
+    List<Location*> set;
+    set.Append(methodAddr);
+    return set;
+}
+List<Location*> ACall::KillSet()
+{
+    List<Location*> set;
     if (dst)
-        return FilterGlobalVars(new LiveVars_t {dst});
-    return new LiveVars_t;
+    {
+        set.Append(dst);
+    }
+    return set;
 }
 
 

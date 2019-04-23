@@ -85,11 +85,6 @@ template<class Element> class List {
     void Remove(const Element &elem)
         { elems.erase(std::remove(elems.begin(), elems.end(), elem), elems.end()); }
 
-	 // Removes all elements in the given list
-    void RemoveAll(const List<Element> &lst)
-        { for (int i = 0; i < lst.NumElements(); i++)
-	     Remove(lst.Nth(i)); }
-
 	 // Sort and remove repeated elements
     void Unique()
         { std::sort(elems.begin(), elems.end());

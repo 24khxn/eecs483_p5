@@ -27,6 +27,11 @@ class Mips {
   public:
     typedef enum {Add, Sub, Mul, Div, Mod, Eq, Less, And, Or, NumOps} OpCode;
 
+    /*
+     * Chun says: t0-t9, s0-s7 general purpose (use these)
+     * v0, v1 are return value registers, v1 is never used in decaf (32 bit)
+     * a0-a3 are used for built in functions, save/restore them before use
+     */
     typedef enum {zero, at, v0, v1, a0, a1, a2, a3,
 			t0, t1, t2, t3, t4, t5, t6, t7,
 			s0, s1, s2, s3, s4, s5, s6, s7,
@@ -34,15 +39,18 @@ class Mips {
 
     static const int NumGeneralPurposeRegs = 18;
 
+  private:
     struct RegContents {
-        bool isDirty;
-	Location *var;
 	const char *name;
 	bool isGeneralPurpose;
     } regs[NumRegs];
 
-  private:
     Register rs, rt, rd;
+
+    typedef enum { ForRead, ForWrite } Reason;
+    
+    void FillRegister(Location *src, Register reg);
+    void SpillRegister(Location *dst, Register reg);
 
     void EmitCallInstr(Location *dst, const char *fn, bool isL);
     
@@ -83,9 +91,8 @@ class Mips {
 
     void EmitPreamble();
 
-    void FillRegister(Location *src, Register reg);
-    void SpillRegister(Location *dst, Register reg);
-    void ClearRegister();
+    void SaveCaller(Location *location);
+    void RestoreCaller(Location *location);
 };
 
 

@@ -11,13 +11,477 @@
 #include "mips.h"
 #include "ast_decl.h"
 #include "errors.h"
+#include <vector>
+#include <string>
 #include <stack>
-#include "hashtable.h"
+  
+using namespace std;
   
 CodeGenerator::CodeGenerator()
 {
   code = new List<Instruction*>();
+  labels = new unordered_map<string, Instruction*>;
+  deletedCode = new vector<Instruction*>;
+  interGraph = new List<Location*>();
   curGlobalOffset = 0;
+}
+
+void CodeGenerator::createCFG(int begin)
+{
+    BeginFunc* bf = dynamic_cast<BeginFunc*>(code->Nth(begin));
+    Assert(bf); //always start at BeginFunc
+    Goto* gt;
+    IfZ* iz;
+    EndFunc* ef;
+    Return* ret;
+    /*
+    dynamic casts to paste in as needed
+    LoadConstant* lc = dynamic_cast<LoadConstant*>(code->Nth(//XXX));
+    LoadStringConstant* lcs = dynamic_cast<LoadStringConstant*>(code->Nth(//XXX));
+    LoadLabel* ll = dynamic_cast<LoadLabel*>(code->Nth(//XXX));
+    Assign* assign = dynamic_cast<Assign*>(code->Nth(//XXX));
+    Load* load = dynamic_cast<Load*>(code->Nth(//XXX));
+    Store* store = dynamic_cast<Store*>(code->Nth(//XXX));
+    BinaryOp* bo = dynamic_cast<BinaryOp*>(code->Nth(//XXX));
+    Label* label = dynamic_cast<Label*>(code->Nth(//XXX));
+    Goto* gt = dynamic_cast<Goto*>(code->Nth(//XXX));
+    IfZ* iz = dynamic_cast<IfZ*>(code->Nth(//XXX));
+    EndFunc* ef = dynamic_cast<EndFunc*>(code->Nth(//XXX));
+    Return* ret = dynamic_cast<Return*>(code->Nth(//XXX));
+    PushParam* pp = dynamic_cast<PushParam*>(code->Nth(//XXX));
+    RemoveParams* rp = dynamic_cast<RemoveParams*>(code->Nth(//XXX));
+    LCall* lCall = dynamic_cast<LCall*>(code->Nth(//XXX));
+    ACall* aCall = dynamic_cast<ACall*>(code->Nth(//XXX));
+    VTable* vt = dynamic_cast<VTable*>(code->Nth(//XXX));
+    */
+    for (int i = begin; i < code->NumElements(); i++)
+    {
+        //If EndFunc, finished
+        ef = dynamic_cast<EndFunc*>(code->Nth(i));
+        if (ef)
+            break;
+            
+        //If Goto, find label, add to edges
+        gt = dynamic_cast<Goto*>(code->Nth(i));
+        if (gt)
+        {
+            string s = gt->getLabel();
+            gt->addEdge((*labels)[s]);
+            continue;
+        }
+        
+        //If IfZ, find label, add next instruction and label to edges
+        iz = dynamic_cast<IfZ*>(code->Nth(i));
+        if (iz)
+        {
+            string s = iz->getLabel();
+            iz->addEdge((*labels)[s]);
+            
+            iz->addEdge(code->Nth(i+1));
+            continue;
+        }
+        Return* ret = dynamic_cast<Return*>(code->Nth(i));
+        if (ret)
+        {
+            continue;
+        }
+        code->Nth(i)->addEdge(code->Nth(i+1)); //if instruction doesnt fit any above, add next instruction
+    }
+    do //when dead code is removed, livenessAnalysis must restart
+    {
+        livenessAnalysis(begin);
+        for (int i = begin; i < code->NumElements(); i++)
+        {
+            // // cout << code->Nth(i)->TACString() << "\n----\n";
+            // // cout << "OutSet" << endl; 
+            for (int j = 0; j < code->Nth(i)->outSet.NumElements(); j++)
+            {
+                // // cout << code->Nth(i)->outSet.Nth(j)->GetName() << ' ';
+            } 
+            // // cout << endl << "KillSet" << endl;
+            for (int j = 0; j < code->Nth(i)->KillSet().NumElements(); j++)
+            {
+                // // cout << code->Nth(i)->KillSet().Nth(j)->GetName() << ' ';
+            }
+            // // cout << endl << "InSet" << endl;
+            for (int j = 0; j < code->Nth(i)->inSet.NumElements(); j++)
+            {
+                // // cout << code->Nth(i)->inSet.Nth(j)->GetName() << ' ';
+            }
+            // // cout << "\n\n";
+        }
+    }
+    while (deadCodeAnalysis(begin));
+
+    interferenceGraph(begin);
+
+    // // cout << "interGraph" << endl;
+    for (int i = 0; i < interGraph->NumElements(); i++)
+    {
+        // // cout << "---------- " << interGraph->Nth(i)->GetName() << " --------------" << endl;
+        for (int j = 0; j < interGraph->Nth(i)->getNumEdges(); j++)
+        {
+            // // cout << interGraph->Nth(i)->getEdge(j)->GetName() << endl;
+        }
+    }
+
+    for (int i = 0; i < interGraph->NumElements(); i++)
+    {
+        // // cout << interGraph->Nth(i)->GetName() << ' ' << interGraph->Nth(i) << endl;
+    }
+    // cout << "BETWEEN" << endl;
+    kColoring();
+
+
+    interGraph->Clear();
+    deletedCode->clear();
+}
+
+void CodeGenerator::livenessAnalysis(int begin)
+{
+    Instruction* instruction;
+    Instruction* edge;
+
+    BeginFunc* bf = dynamic_cast<BeginFunc*>(code->Nth(begin));
+    Assert(bf);
+    bool changed = true;
+    List<Location*> emptyList;
+    for (int i = begin; i < code->NumElements(); i++)
+        code->Nth(i)->inSet = emptyList; //inSets must be recomputed every time liveness is called
+        
+    while (changed)
+    {
+        changed = false;
+
+        for (int i = begin; i < code->NumElements(); i++) //for each TAC in CFG:
+        {
+            List<Location*> outSet;
+            instruction = code->Nth(i);
+            for (int j = 0; j < instruction->getNumEdges(); j++) //Out[TAC] = Union(In[Succ(TAC)])
+            {
+                edge = instruction->getEdge(j);
+                bool deleted = false;
+                for (int k = 0; k < deletedCode->size(); k++)
+                {
+                    if (edge == (*deletedCode)[k])
+                    {
+                        deleted = true;
+                        break;
+                    }
+                }
+                if (deleted)
+                    continue;
+                    
+                for (int k = 0; k < edge->inSet.NumElements(); k++) //Union every elem into outSet
+                {
+                    Location* elem = edge->inSet.Nth(k);
+                    bool found = false;
+                    for (int l = 0; l < outSet.NumElements(); l++)  //check to see if elem is already in outSet
+                    {
+                        if (outSet.Nth(l) == elem)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found)
+                        outSet.Append(elem); //if elem isn't already in outSet, add it
+                }
+            }
+            instruction->outSet = outSet;
+            //In'[TAC] = Out[TAC] - Kill[TAC] + Gen[TAC]
+            List<Location*> inPrimeSet = outSet; //= Out[TAC]
+            List<Location*> killSet = instruction->KillSet();
+            List<Location*> genSet = instruction->GenSet();
+
+            for (int j = 0; j < inPrimeSet.NumElements(); j++) //- Kill[TAC]
+            {
+                for (int k = 0; k < killSet.NumElements(); k++)
+                {
+                    if (inPrimeSet.Nth(j) == killSet.Nth(k))
+                    {
+                        inPrimeSet.RemoveAt(j);
+                        j--; //so elements dont get skipped
+                        break;
+                    }
+                }
+            }
+            for (int j = 0; j < genSet.NumElements(); j++) //+ Gen[TAC]
+            {
+                bool found = false;
+                for (int k = 0; k < inPrimeSet.NumElements(); k++)
+                {
+                    if (inPrimeSet.Nth(k) == genSet.Nth(j))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if (!found)
+                    inPrimeSet.Append(genSet.Nth(j));
+            }
+            
+            List<Location*> tempInPrimeSet = inPrimeSet; 
+            
+            bool foundInOutSet = false;
+            bool setsAreDifferent = false;
+            for(int j=0; j< instruction->inSet.NumElements(); j++)
+            {
+            	for(int k=0; k<tempInPrimeSet.NumElements(); k++)
+            	{
+            		if(instruction->inSet.Nth(j) == tempInPrimeSet.Nth(k))
+            		{
+            			tempInPrimeSet.RemoveAt(k); 
+            			foundInOutSet = true; 
+            			break;
+            		}
+            	}
+            	
+            	if(foundInOutSet)
+            	{
+            		foundInOutSet = false; 
+            		continue; 
+            	}
+            	else
+            	{
+            		setsAreDifferent = true;
+            		break;
+            	}
+            }            
+            
+            if(setsAreDifferent || tempInPrimeSet.NumElements() != 0)
+            {
+            	instruction->inSet = inPrimeSet; 
+            	changed = true; 
+            }
+            
+        }
+    }
+}
+
+bool CodeGenerator::deadCodeAnalysis(int begin)
+{
+    Instruction* instruction;
+    bool altered = false;
+    for (int i = begin; i < code->NumElements(); i++)
+    {
+        instruction = code->Nth(i);
+        Assert(instruction);
+        if (instruction->isDead())
+        {
+            // // cout << "removing" << endl;
+            code->RemoveAt(i);
+            // // cout << instruction->TACString() << endl;
+            i--; //to prevent skipping instructions
+            altered = true;
+            deletedCode->push_back(instruction);
+        }
+        
+    }
+    return altered;
+}
+
+void CodeGenerator::interferenceGraph(int begin)
+{
+    List<Location*> killSet, inSet, outSet;
+    inSet = code->Nth(begin)->inSet;
+    interGraph->AppendAll(inSet);
+    interGraph->Unique();
+    for (int i = 0; i < inSet.NumElements(); i++)
+    {
+        for (int j = i + 1; j < inSet.NumElements(); j++)
+        {
+            inSet.Nth(i)->addEdge(inSet.Nth(j));
+        }
+    }
+    for (int i = begin + 1; i < code->NumElements(); i++)
+    {
+        outSet = code->Nth(i)->outSet;
+        killSet = code->Nth(i)->KillSet();
+        interGraph->AppendAll(outSet);
+        interGraph->Unique();
+        for (int j = 0; j < killSet.NumElements(); j++)
+        {
+            for (int k = 0; k < outSet.NumElements(); k++)
+            {
+                if (outSet.Nth(k) != killSet.Nth(j))
+                {
+                    // // cout << outSet.Nth(k)->GetName() << " <-> " << killSet.Nth(j)->GetName() << endl;
+                    outSet.Nth(k)->addEdge(killSet.Nth(j));
+                }
+            }
+        }
+    }
+    //// cout << "GRAPH" << endl;
+    for (int i = 0; i < interGraph->NumElements() - 1; i++)
+    {
+        //// cout << interGraph->Nth(i) << endl;
+        Assert(interGraph->Nth(i) != interGraph->Nth(i+1));
+    }
+    //// cout << "ENDGRAPH" << endl;
+}
+
+
+void CodeGenerator::kColoring()
+{
+      // // cout << "before" << endl;
+ 	  bool canColor = false; 			// Indicator to keep loop going until coloring found
+ 	  stack<Location*> degree;			// Stack to keep track of Nodes with degree under K 
+ 	  List<Location*> removed; 			// Keep track of locations that have been "removed" from interGraph 
+ 	  if (interGraph->NumElements() == 0)
+ 	    return;
+ 	  while(!canColor)
+ 	  {
+ 	  	int temp; 
+ 	  	while((temp = findNode(removed)) != -1) // degree satisfies 
+ 	  	{
+ 	  		Location* satisfies = interGraph->Nth(temp); 	
+ 	  		removed.Append(satisfies); 					// Add node to removed
+            // // cout << satisfies->GetName() << " REMOVED" << endl; 
+ 	  		degree.push(satisfies);  // push node to stack to be setReg later 
+ 	  	}
+ 	  	// // cout << degree.top()->GetName() << endl;
+ 	  	if(removed.NumElements() == interGraph->NumElements()) // Means K Colorable .. stack is full of all nodes 
+		{
+			Location *node = degree.top(); 
+			Assert(node);
+			degree.pop(); 
+			node->SetRegister(Mips::Register(8));	// Set first reg to t0 
+            if (!strcmp(node->GetName(), "this"))
+                node->SetRegister(Mips::Register(3));
+            // // cout << node->GetName() << "=" << node->GetRegister() << endl;
+			bool foundSameReg = false;  // Indicator for whether found loc with same reg 
+			while(!degree.empty())		
+			{
+				node = degree.top(); 
+				degree.pop(); 
+
+
+                
+                if (!strcmp(node->GetName(), "this"))
+                {
+                    node->SetRegister(Mips::Register(3));
+                    // // cout << node->GetName() << "=" << node->GetRegister() << endl;
+                    continue;
+                }
+				for(int i=8; i<=25; i++) // best way to filter out gp regs? 
+				{
+					for(int j=0; j<node->getNumEdges(); j++)
+					{
+						if(node->getEdge(j)->GetRegister() == Mips::Register(i))	// Check with edge nodes if any adjacent have the same reg 
+						{
+							foundSameReg = true; 
+							break; 
+						}
+					}
+					if(foundSameReg)
+					{
+						foundSameReg = false; 
+						continue; 
+					}
+					else 
+					{
+                        node->SetRegister(Mips::Register(i)); 
+                        // // cout << node->GetName() << "=" << node->GetRegister() << endl;
+                        break;
+					}				
+				}
+			}
+			
+			canColor = true; 
+		
+		}
+		else // Cant be Kcolored
+		{	
+			int index = findMaxKNode(removed); 	//Returns largest degree index 
+			// cout << interGraph->Nth(index) << endl;
+			if(index != -1)
+			{
+				// // cout<<"Good index .. spilling "<<interGraph->Nth(index)->GetName()<<endl; 
+				removed.Append(interGraph->Nth(index));	// Append to remove list 
+			//	Mips mips; 
+			//	mips.SpillRegister(interGraph->Nth(index),interGraph->Nth(index)->GetRegister()); 	// Not sure if this is right but spill the largest degreed reg 
+			}
+			else
+			{
+				exit(1);// // cout<<"Bad Index"<<endl; 	// Checker 
+			}
+		}
+ 	 }
+ 	 // // cout << "after" << endl;
+}
+
+
+int CodeGenerator::findNode(List<Location*> removed)
+{
+	int count = 0; 
+	for(int i=0; i<interGraph->NumElements(); i++)
+	{
+		int numEdges = interGraph->Nth(i)->getNumEdges();
+		
+		if(wasRemoved(interGraph->Nth(i),removed))      // Has this location been removed already  
+			continue;
+			 
+		if(numEdges < Mips::NumGeneralPurposeRegs) // if it is already below the max num then it can return here 
+		{
+			return i; 
+		}
+		else
+		{
+			for(int j= 0; j<numEdges; j++)	
+			{
+				if(!wasRemoved(interGraph->Nth(i)->getEdge(j),removed))	// Checks if it was not removed .. if so, add to count 
+					count++;
+			}
+			
+			if(count < Mips::NumGeneralPurposeRegs)	// Check count
+				return i;
+		}
+	}
+	
+	return -1; 
+}
+
+int CodeGenerator::findMaxKNode(List<Location*> removed) //Like find node but for max node 
+{
+	int max = -1;
+	int count = 0;
+	int index = -1;  
+	for(int i=0; i<interGraph->NumElements(); i++)
+	{
+        if (wasRemoved(interGraph->Nth(i), removed))
+            continue;
+        count = 0;
+		for(int j=0; j<interGraph->Nth(i)->getNumEdges(); j++)
+		{
+			if(wasRemoved(interGraph->Nth(i)->getEdge(j),removed))
+				continue; 
+			else
+				count ++; 
+		}
+		
+		if(count > max)
+		{
+			max = count; 
+			index = i; 
+		}	
+	}
+
+	return index; 
+}
+
+bool CodeGenerator::wasRemoved(Location* check,List<Location*> removed)	// Checks to see if location exists in removed list 
+{
+	for(int i=0; i<removed.NumElements() ; i++)
+	{
+		if(check == removed.Nth(i))
+		{
+			return true;
+		}
+	}
+	
+	return false; 
 }
 
 char *CodeGenerator::NewLabel()
@@ -29,7 +493,7 @@ char *CodeGenerator::NewLabel()
 }
 
 
-Location *CodeGenerator::GenTempVariable()
+Location *CodeGenerator::GenTempVar()
 {
   static int nextTempNum;
   char temp[10];
@@ -42,47 +506,33 @@ Location *CodeGenerator::GenTempVariable()
 Location *CodeGenerator::GenLocalVariable(const char *varName)
 {            
     curStackOffset -= VarSize;
-    Location *loc = new Location(fpRelative, curStackOffset+4, varName);
-    return loc;
+    return new Location(fpRelative, curStackOffset+4,  varName);
 }
 
 Location *CodeGenerator::GenGlobalVariable(const char *varName)
 {
     curGlobalOffset += VarSize;
-    Location *loc = new Location(gpRelative, curGlobalOffset-4, varName);
-    return loc;
-}
-
-Location *CodeGenerator::GenParameter(int index, const char *varName)
-{
-    Location *loc = new Location(fpRelative, OffsetToFirstParam+index*VarSize, varName);
-    return loc;
-}
-
-Location *CodeGenerator::GenIndirect(Location* base, int offset)
-{
-    Location *loc = new Location(base, offset);
-    return loc;
+    return new Location(gpRelative, curGlobalOffset -4, varName);
 }
 
 
 Location *CodeGenerator::GenLoadConstant(int value)
 {
-  Location *result = GenTempVariable();
+  Location *result = GenTempVar();
   code->Append(new LoadConstant(result, value));
   return result;
 }
 
 Location *CodeGenerator::GenLoadConstant(const char *s)
 {
-  Location *result = GenTempVariable();
+  Location *result = GenTempVar();
   code->Append(new LoadStringConstant(result, s));
   return result;
 } 
 
 Location *CodeGenerator::GenLoadLabel(const char *label)
 {
-  Location *result = GenTempVariable();
+  Location *result = GenTempVar();
   code->Append(new LoadLabel(result, label));
   return result;
 } 
@@ -96,7 +546,7 @@ void CodeGenerator::GenAssign(Location *dst, Location *src)
 
 Location *CodeGenerator::GenLoad(Location *ref, int offset)
 {
-  Location *result = GenTempVariable();
+  Location *result = GenTempVar();
   code->Append(new Load(result, ref, offset));
   return result;
 }
@@ -110,7 +560,7 @@ void CodeGenerator::GenStore(Location *dst,Location *src, int offset)
 Location *CodeGenerator::GenBinaryOp(const char *opName, Location *op1,
 						     Location *op2)
 {
-  Location *result = GenTempVariable();
+  Location *result = GenTempVar();
   code->Append(new BinaryOp(BinaryOp::OpCodeForName(opName), result, op1, op2));
   return result;
 }
@@ -118,7 +568,10 @@ Location *CodeGenerator::GenBinaryOp(const char *opName, Location *op1,
 
 void CodeGenerator::GenLabel(const char *label)
 {
-  code->Append(new Label(label));
+  Instruction* instruction = new Label(label);
+  code->Append(instruction);
+  string s = label;
+  (*labels)[s] = instruction;
 }
 
 void CodeGenerator::GenIfZ(Location *test, const char *label)
@@ -137,21 +590,29 @@ void CodeGenerator::GenReturn(Location *val)
 }
 
 
-BeginFunc *CodeGenerator::GenBeginFunc(FnDecl* f)
+BeginFunc *CodeGenerator::GenBeginFunc(FnDecl *fn)
 {
-  BeginFunc *result = new BeginFunc(f->GetFormals());
-  code->Append(result);
-  insideFn = code->NumElements() - 1;
+  BeginFunc *result = new BeginFunc();
+  code->Append(insideFn = result);
+  List<VarDecl*> *formals = fn->GetFormals();
+  int start = OffsetToFirstParam;
+  if (fn->IsMethodDecl()) start += VarSize;
+  for (int i = 0; i < formals->NumElements(); i++)
+  {
+    Location* param = new Location(fpRelative, i*VarSize + start, formals->Nth(i)->GetName());
+    formals->Nth(i)->rtLoc = param;
+    result->addParameter(param);
+  }
   curStackOffset = OffsetToFirstLocal;
+  result->checkMethod(fn);
   return result;
 }
 
 void CodeGenerator::GenEndFunc()
 {
   code->Append(new EndFunc());
-  BeginFunc *beginFunc = dynamic_cast<BeginFunc*>(code->Nth(insideFn));
-  Assert(beginFunc != NULL);
-  beginFunc->SetFrameSize(OffsetToFirstLocal-curStackOffset);
+  insideFn->SetFrameSize(OffsetToFirstLocal-curStackOffset);
+  insideFn = NULL;
 }
 
 void CodeGenerator::GenPushParam(Location *param)
@@ -168,7 +629,7 @@ void CodeGenerator::GenPopParams(int numBytesOfParams)
 
 Location *CodeGenerator::GenLCall(const char *label, bool fnHasReturnValue)
 {
-  Location *result = fnHasReturnValue ? GenTempVariable() : NULL;
+  Location *result = fnHasReturnValue ? GenTempVar() : NULL;
   code->Append(new LCall(label, result));
   return result;
 }
@@ -184,7 +645,7 @@ Location *CodeGenerator::GenFunctionCall(const char *fnLabel, List<Location*> *a
 
 Location *CodeGenerator::GenACall(Location *fnAddr, bool fnHasReturnValue)
 {
-  Location *result = fnHasReturnValue ? GenTempVariable() : NULL;
+  Location *result = fnHasReturnValue ? GenTempVar() : NULL;
   code->Append(new ACall(fnAddr, result));
   return result;
 }
@@ -221,7 +682,7 @@ Location *CodeGenerator::GenBuiltInCall(BuiltIn bn,Location *arg1, Location *arg
   struct _builtin *b = &builtins[bn];
   Location *result = NULL;
 
-  if (b->hasReturn) result = GenTempVariable();
+  if (b->hasReturn) result = GenTempVar();
                 // verify appropriate number of non-NULL arguments given
   Assert((b->numArgs == 0 && !arg1 && !arg2)
 	|| (b->numArgs == 1 && arg1 && !arg2)
@@ -242,20 +703,14 @@ void CodeGenerator::GenVTable(const char *className, List<const char *> *methodL
 
 void CodeGenerator::DoFinalCodeGen()
 {
-
-  BuildCFG();
-  LiveVariableAnalysis();
-  BuildInterferenceGraph();
-  ColorGraph();
-
   if (IsDebugOn("tac")) { // if debug don't translate to mips, just print Tac
     for (int i = 0; i < code->NumElements(); i++)
-      code->Nth(i)->Print();
-  } else {
-    Mips mips;
-    mips.EmitPreamble();
-    for (int i = 0; i < code->NumElements(); i++)
-      code->Nth(i)->Emit(&mips);
+	code->Nth(i)->Print();
+   }  else {
+     Mips mips;
+     mips.EmitPreamble();
+     for (int i = 0; i < code->NumElements(); i++)
+	 code->Nth(i)->Emit(&mips);
   }
 }
 
@@ -301,7 +756,7 @@ Location *CodeGenerator::GenSubscript(Location *array, Location *index)
   Location *four = GenLoadConstant(VarSize);
   Location *offset = GenBinaryOp("*", four, index);
   Location *elem = GenBinaryOp("+", array, offset);
-  return GenIndirect(elem, 0); 
+  return new Location(elem, 0); 
 }
 
 
@@ -330,180 +785,4 @@ void CodeGenerator::GenHaltWithMessage(const char *message)
    Location *msg = GenLoadConstant(message);
    GenBuiltInCall(PrintString, msg);
    GenBuiltInCall(Halt, NULL);
-}
-
-
-void CodeGenerator::BuildCFG()
-{
-    Hashtable<Instruction*> label_to_TAC;
-
-    for (int i = 0; i < code->NumElements() - 1; i++)
-    {
-        if (auto lt = dynamic_cast<Label*>(code->Nth(i)))
-        {
-            label_to_TAC.Enter(lt->GetLabel(), code->Nth(i+1));
-        }
-    }
-
-    for (int i = 0; i < code->NumElements() - 1; i++)
-    {
-        auto tac = code->Nth(i);
-
-        if (dynamic_cast<EndFunc*>(code->Nth(i)))
-            continue;
-        
-        else if (auto ifz_tac = dynamic_cast<IfZ*>(tac))
-        {
-            auto jump_tac = label_to_TAC.Lookup(ifz_tac->GetLabel());
-            ifz_tac->next.Append(jump_tac);
-            jump_tac->prev.Append(ifz_tac);
-        }
-        else if (auto goto_tac = dynamic_cast<Goto*>(tac))
-        {
-            auto jumpto_tac = label_to_TAC.Lookup(goto_tac->GetLabel());
-            goto_tac->next.Append(jumpto_tac);
-            jumpto_tac->prev.Append(goto_tac);
-        }
-        else 
-        {
-            tac->next.Append(code->Nth(i+1));
-            code->Nth(i+1)->prev.Append(tac);
-        }
-    }
-}
-
-void CodeGenerator::LiveVariableAnalysis()
-{
-    // pulled straight from the pseudocode in spec
-
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        // looping backwards for faster convergence
-        for (int i = code->NumElements() - 1; i >= 0; i--)
-        {
-            auto tac = code->Nth(i);
-
-            LiveVars_t* out_set = new LiveVars_t;
-            for (int j = 0; j < tac->next.NumElements(); j++)
-            {
-                auto next_lives = tac->next.Nth(j)->live_vars_in;
-                out_set->insert(next_lives->begin(), next_lives->end());
-            }
-
-            if (*out_set != *(tac->live_vars_out))
-                changed = true;
-            
-            tac->live_vars_out = out_set;
-            *(tac->live_vars_in) = *out_set;
-
-            auto gen_set = tac->GetGens();
-            auto kill_set = tac->GetKills();
-
-            for (auto kloc : *(kill_set))
-                tac->live_vars_in->erase(kloc);
-            
-            tac->live_vars_in->insert(gen_set->begin(), gen_set->end());
-        }
-    }
-}
-
-void CodeGenerator::BuildInterferenceGraph()
-{
-    InterferenceGraph_t* current = NULL;
-
-    for (int i = 0; i < code->NumElements(); i++)
-    {
-        auto tac = code->Nth(i);
-        if (auto beginfunc_tac = dynamic_cast<BeginFunc*> (tac))
-            current = &(beginfunc_tac->interference_graph);
-
-        if (current)
-        {
-            for (auto from_tac : *(tac->live_vars_in))
-            {
-                if (current->find(from_tac) == current->end())
-                    (*current)[from_tac] = {};
-                
-                for (auto to_tac : *(tac->live_vars_in))
-                {
-                    if (from_tac != to_tac)
-                        (*current)[from_tac].insert(to_tac);
-                }
-            }
-
-            for (auto kill_tac : *(tac->GetKills()))
-            {
-                if (current->find(kill_tac) == current->end())
-                    (*current)[kill_tac] = {};
-                
-                for (auto out_tac : *(tac->live_vars_out))
-                {
-                    if (kill_tac != out_tac)
-                    {
-                        (*current)[kill_tac].insert(out_tac);
-                        (*current)[out_tac].insert(kill_tac);
-                    }
-                }
-            }
-        }
-    }
-}
-
-void CodeGenerator::ColorGraph()
-{
-    InterferenceGraph_t* current = nullptr;
-
-    for (int i = 0; i < code->NumElements(); i++)
-    {
-        auto tac = code->Nth(i);
-
-        if (auto beginfunc_tac = dynamic_cast<BeginFunc*> (tac))
-        {
-            current = &(beginfunc_tac->interference_graph);
-            std::stack<Location*> nodes_remove;
-            InterferenceGraph_t edges_remove;
-
-            while (!current->empty())
-            {
-                Location* max = nullptr;
-                int max_size = -1;
-
-                for (auto& kv: *current)
-                {
-                    if ( ((int) kv.second.size()) > max_size)
-                    {
-                        max = kv.first;
-                        max_size = (int) kv.second.size();
-                    }
-                }
-
-                nodes_remove.push(max);
-                edges_remove[max] = (*current)[max];
-                current->erase(max);
-
-                for (auto& kv: *current)
-                    kv.second.erase(max);
-
-            }
-
-            while (!nodes_remove.empty())
-            {
-                auto node = nodes_remove.top();
-                nodes_remove.pop();
-                std::set<Mips::Register> gen_purp_regs = {
-                    Mips::t0, Mips::t1, Mips::t2, Mips::t3, Mips::t4, Mips::t5,
-                    Mips::t6, Mips::t7, Mips::t8, Mips::t9, Mips::s0, Mips::s1,
-                    Mips::s2, Mips::s3, Mips::s4, Mips::s5, Mips::s6, Mips::s7
-                };
-
-                for (auto to_node: edges_remove[node])
-                    gen_purp_regs.erase(to_node->GetRegister());
-                
-                node->SetRegister(*(gen_purp_regs.begin()));
-                edges_remove.erase(node);
-            }
-        }
-    }
 }
