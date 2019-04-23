@@ -32,12 +32,12 @@ class CodeGenerator {
     unordered_map<string, Instruction*>* labels;
     vector<Instruction*>* deletedCode;
     
-    void livenessAnalysis(int begin);
-    bool deadCodeAnalysis(int begin);
-    void interferenceGraph(int begin);
-	int  findNode(List<Location*> removed); 
-	int  findMaxKNode(List<Location*> removed); 
-	bool wasRemoved(Location* check, List<Location*> removed); 
+    void LivenessAnalysis(int begin);
+    bool DeadCodeAnalysis(int begin);
+    void InterferenceGraph(int begin);
+	int  FindNode(List<Location*> removed); 
+	int  FindMaxK(List<Location*> removed); 
+	bool WasRemoved(Location* check, List<Location*> removed); 
 	
   public:
            // Here are some class constants to remind you of the offsets
